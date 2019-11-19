@@ -1,0 +1,23 @@
+Chaque processus (struct):
+ - priorité (de 0 à 9)
+ - date de soumission
+ - temps d'execution
+
+Fonctionnement
+ - Algo Round Robin
+   1) (que la premiere fois) ajouter les nouvaux arrivées dans la file
+   2) regarder la priorité courante et prendre le processus de la file correspondante (si vide, prendre de la file suivante)
+   3) executer le processus (reduire le temps d'exec)
+   4) ajouter les nouvaux arrivées dans la file
+   5) reduire la priorité du processus qui vient d'etre executé (l'ajouter à la file)
+   6) passer à la prochaine priorité
+   7) recommencer (aller à l'étape 2))
+
+ - Fonctionnatilés
+   - table de priorités modifiable par l'utilisateur
+   - generer des processus aléatoirement
+   - tenir compte de la synchronisation (avec les quantums de temps)
+   - tenir compte des objets residuels
+   - makefile
+   - arrivé synchronisé ?
+   - modifier la valeur du quantum (?)
