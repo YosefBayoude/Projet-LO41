@@ -30,6 +30,47 @@ typedef struct type_processus
     int temps_exec;
 } processus;
 
+void traitantSIGINT();
+
+void initSem() {
+    int status;
+   	union semun {
+		int val;
+		struct semid_ds *stat;
+		short * array;
+	} ctl_arg;
+
+    short array[1] = {1};
+
+    ctl_arg.array = array;
+
+    if ((semid = semget(CLE, 1, 0666|IPC_CREAT)) > 0) {
+        status = semctl(semid, 0, SETALL, ctl_arg);
+    }
+
+    if (semid == -1 || status == -1) { 
+        perror("Erreur initsem\n");
+    }
+}
+
+void initShm(){
+    shmid = shmget(CLE, sizeof(int), 0666|IPC_CREAT);
+	temps = (int *)shmat(shmid, NULL, 0);
+}
+
+void initMsg(){
+    if ((msgid = msgget(CLE, 0750 | IPC_CREAT | IPC_EXCL)) == -1)
+    {
+        perror("Erreur creation file de message\n");
+    }
+}
+
+void supprimerMessages(){ msgctl(msgid, IPC_RMID, NULL); }
+
+void supprimerSemaphores(){ semctl(semid, 0, IPC_RMID, NULL); }
+
+void supprimerMemoirePartage(){ shmctl(shmid, IPC_RMID, NULL); }
+
 void P() {
     sem_oper_P.sem_num = 0;
     sem_oper_P.sem_op  = -1 ;
@@ -49,29 +90,6 @@ int randomNumber(int min, int max){
     return (rand() %(max - min + 1)) + min;
 }
 
-int initsem(key_t semkey) 
-{
-    int status;
-	int semid_init;
-   	union semun {
-		int val;
-		struct semid_ds *stat;
-		short * array;
-	} ctl_arg;
-    short array[1] = {1};
-    ctl_arg.array = array;
-
-    if ((semid_init = semget(semkey, 1, 0666|IPC_CREAT)) > 0) {
-        status = semctl(semid_init, 0, SETALL, ctl_arg);
-    }
-    if (semid_init == -1 || status == -1) { 
-        perror("Erreur initsem\n");
-        return (-1);
-    }else{
-        return semid_init;
-    }
-}
-
 
 processus genererProcessus(){
     processus prc;
@@ -80,16 +98,12 @@ processus genererProcessus(){
     return prc;
 }
 
-void supprimerMessages(){
-    msgctl(msgid, IPC_RMID, NULL);
-}
-
 
 void traitandSIGINT(int num){
     if (num == SIGINT){
         supprimerMessages();
-	    shmctl(shmid, IPC_RMID, NULL);
-        semctl(semid, 0, IPC_RMID, NULL);
+	    supprimerSemaphores();
+        supprimerMemoirePartage();
         exit(1);
     } else {
         perror("Erreur traitant, files non supprimé\n");
@@ -100,21 +114,14 @@ int main()
 {
     printf("Lancement du programme\n");
     srand(time(0));
-
-
+    
     signal(SIGINT, traitandSIGINT);
-    msgid;
-    if ((msgid = msgget(CLE, 0750 | IPC_CREAT | IPC_EXCL)) == -1)
-    {
-        perror("Erreur creation file de message\n");
-    }
 
-    semid = initsem(CLE);
+    initMsg();
+    initSem();
+    initShm();
 
-    shmid = shmget(CLE, sizeof(int), 0666|IPC_CREAT);
-	temps = (int *)shmat(shmid, NULL, 0);
 	*temps = 0; //initialisation a 0 du compteur
-
 
     printf("Creation du fils\n");
     int pid_fils = fork();  
@@ -130,9 +137,6 @@ int main()
             {
                 //FILS
                 //Genere des processus
-
-
-                
                 while(1) {
                     P();
                     for (int i = 0; i < randomNumber(0, 10); i++)
@@ -143,10 +147,9 @@ int main()
                         msgsnd(msgid, &prc, sizeof(processus) - sizeof(long), 0);
                         printf("Processus arrivé avec prio : %d\n", prc.priorite);
                     }
-                    sleep(2);
                     V();
+                    sleep(2);
                 }
-
                 exit(0);
             }
             break;
@@ -157,14 +160,10 @@ int main()
             //PERE
             //Gere l'algorithme d'ordonnancement
             {
-                //int status;
-                //wait(&status);
-                
                 processus liste_prc[20];
-
+                struct msqid_ds buf;
                 while(1) {
                     P();
-                    struct msqid_ds buf;
                     int nb_messages = msgctl(msgid, IPC_STAT, &buf);
                     while (buf.msg_qnum > 0) //Tant qu'il y a des messages
                     {
@@ -172,10 +171,10 @@ int main()
                         nb_messages = msgctl(msgid, IPC_STAT, &buf);
                         printf("Message recu : prio = %d, temps = %d\n", liste_prc[0].priorite, liste_prc[0].date_soumission);
                     }
-                    sleep(5);
                     (*temps)++;
                     printf("Temps courant : %d\n", *temps);
                     V();
+                    sleep(4);
                 }
 
                 //printf("Il reste %ld messages dans la file\n", buf.msg_qnum);
@@ -184,7 +183,10 @@ int main()
             break;
     }
 
-    msgctl(msgid, IPC_RMID, NULL);
+    
+    supprimerMessages();
+	supprimerSemaphores();
+    supprimerMemoirePartage();
 
     printf("Fin du programme\n");
     return 0;
