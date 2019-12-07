@@ -58,3 +58,4 @@ dkms.conf
 
 # End of https://www.gitignore.io/api/c
 projet.c
+.vscode/settings.json

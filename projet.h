@@ -4,4 +4,5 @@ typedef struct type_processus
     int priorite;
     int date_soumission;
     int temps_exec;
-} processus;
+    int mon_pid;
+} Processus;

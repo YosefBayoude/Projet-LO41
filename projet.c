@@ -15,6 +15,25 @@
 //#ifndef PROJET
 //#define PROJET
 
+#define NORMAL  "\x1B[0m"
+#define RED  "\x1B[31m"
+#define GREEN  "\x1B[32m"
+#define YELLOW  "\x1B[33m"
+#define BLUE  "\x1B[34m"
+#define MAGENTA  "\x1B[35m"
+#define CYAN  "\x1B[36m"
+#define WHITE  "\x1B[37m"
+#define BOLDBLACK   "\033[1m\033[30m"      /* Bold Black */
+#define BOLDRED     "\033[1m\033[31m"      /* Bold Red */
+#define BOLDGREEN   "\033[1m\033[32m"      /* Bold Green */
+#define BOLDYELLOW  "\033[1m\033[33m"      /* Bold Yellow */
+#define BOLDBLUE    "\033[1m\033[34m"      /* Bold Blue */
+#define BOLDMAGENTA "\033[1m\033[35m"      /* Bold Magenta */
+#define BOLDCYAN    "\033[1m\033[36m"      /* Bold Cyan */
+#define BOLDWHITE   "\033[1m\033[37m"      /* Bold White */
+
+#define FILE 1
+
 #define CLE 314
 
 int msgid;
@@ -91,15 +110,16 @@ int randomNumber(int min, int max){
 }
 
 
-processus genererProcessus(){
-    processus prc;
+Processus genererProcessus(){
+    Processus prc;
+    prc.type = FILE;
     prc.priorite = randomNumber(0, 10);
-    prc.temps_exec = randomNumber(0, 20);
+    prc.temps_exec = randomNumber(2, 20);
     return prc;
 }
 
 
-void traitandSIGINT(int num){
+void traitantSIGINT(int num){
     if (num == SIGINT){
         supprimerMessages();
 	    supprimerSemaphores();
@@ -107,35 +127,53 @@ void traitandSIGINT(int num){
         exit(1);
     } else {
         perror("Erreur traitant, files non supprimé\n");
+        exit(1);
     }
 }
+
+void traitantSIGSEGV(int num){
+    if (num == SIGSEGV){
+        printf("Erreur segmentation fault\n");
+        kill(getpid(), SIGINT);
+        exit(1);
+    } else {
+        perror("Erreur traitant, files non supprimé\n");
+        exit(1);
+    }
+}
+
+int nombreMessages(int msgid){
+    struct msqid_ds buf;
+    int nb_messages = msgctl(msgid, IPC_STAT, &buf);
+    return buf.msg_qnum;
+}
+
 
 int main()
 {
     printf("Lancement du programme\n");
     srand(time(0));
     
-    signal(SIGINT, traitandSIGINT);
+    signal(SIGINT, traitantSIGINT);
+    signal(SIGSEGV, traitantSIGSEGV);
 
     initMsg();
     initSem();
     initShm();
 
 
-    /*Ajouter des liste : exemple
-    processus p = genererProcessus();
-    processus p1 = genererProcessus();
+    //Ajouter des liste : exemple
 
+    Element* liste = NULL;
 
-    Element *head = listeCreer();
-    head->data = &p;
+    Processus p = genererProcessus();
+    liste = listeAjouterTete(liste, listeNouvelElement(&p));
 
-    Element *node1 = listeCreer();
-    node1->data = &p1;
-    listeAjouterQueue(head, node1);
-
-    printListeProcessus(head);
-    */
+    printf("here\n");
+    printListeProcessus(liste);
+    listeValeurTete(liste);
+    //return 0;
+    
 
 
 
@@ -174,15 +212,29 @@ int main()
 }
 
 void fils(){
-    while(1) {
+    for(int i = 0; i < 5; i++) {
         P();
-        for (int i = 0; i < randomNumber(0, 10); i++)
+        for (int i = 0; i < randomNumber(0, 5); i++) //Genere un nbre aleatoire de processus à la fois
         {
-            processus prc = genererProcessus();
-            prc.type = getpid();
-            prc.date_soumission = *temps;
-            msgsnd(msgid, &prc, sizeof(processus) - sizeof(long), 0);
-            printf("Processus arrivé avec prio : %d\n", prc.priorite);
+
+            int pid = fork();
+            if (!pid){
+                Processus prc = genererProcessus();
+                prc.date_soumission = *temps;
+                prc.mon_pid = getpid();
+                msgsnd(msgid, &prc, sizeof(Processus) - sizeof(long), 0);
+                printf("%sProcessus %d avec prio %d a demarre: %s\n",GREEN, prc.mon_pid, prc.priorite, NORMAL);
+                
+                for (int j = 0; j < prc.temps_exec; j++){
+                    sleep(1);
+                }
+                
+                printf("%sProcessus %d s'est termine%s\n",RED, prc.mon_pid, NORMAL);
+
+                exit(EXIT_SUCCESS);
+            }
+
+            
         }
         V();
         sleep(2);
@@ -191,23 +243,17 @@ void fils(){
 }
 
 void pere(int pid_fils){
-    processus liste_arrives[100];
-    processus liste_priorites[10][100];
-
-    struct msqid_ds buf;
+        
     while(1) {
         P();
-        int nb_messages = msgctl(msgid, IPC_STAT, &buf);
-        int i = 0;
-        while (buf.msg_qnum > 0) //Tant qu'il y a des messages
+        while (nombreMessages(msgid) > 0) //Tant qu'il y a des messages
         {
-            msgrcv(msgid, &liste_arrives[i], sizeof(processus) - sizeof(long), pid_fils, 0);
-            nb_messages = msgctl(msgid, IPC_STAT, &buf);
-            printf("Message recu : prio = %d, temps = %d\n", liste_arrives[i].priorite, liste_arrives[i].date_soumission);
-            i++; //compteur
+            Processus* p = (Processus*)malloc(sizeof(Processus));
+            msgrcv(msgid, p, sizeof(Processus) - sizeof(long), FILE, 0);
+            printf("%sProcessus %d avec prio est arrive : %d%s\n",GREEN, p->mon_pid, p->priorite, NORMAL);
         }
         (*temps)++;
-        printf("Temps courant : %d\n", *temps);
+        printf("%sTemps courant : %d%s\n",BOLDWHITE, *temps, NORMAL);
         V();
         sleep(4);
     }

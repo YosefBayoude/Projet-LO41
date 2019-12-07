@@ -6,28 +6,15 @@
 #ifndef PROJET
 #define PROJET
 
-/***************************************************************************
- * Helper Types 
- ***************************************************************************/
-
-/* Basic example person data structure. */
-typedef struct {
-    char *name;
-    unsigned int age;
-} person_t;
-
-/***************************************************************************/
-
-/***************************************************************************
- * List Types 
- ***************************************************************************/
 
 /* Represents a node in a doubly-linked list. */
-typedef struct __node_t {
-    struct __node_t *precedent;
-    struct __node_t *suivant;
-    processus *data;
+typedef struct element {
+    struct element *precedent;
+    struct element *suivant;
+    Processus *data;
 } Element;
+
+
 
 /***************************************************************************/
 
@@ -37,19 +24,36 @@ typedef struct __node_t {
 
 /* Initialises a node in a doubly-linked list, returning a pointer to the node. */
 Element *listeCreer() {
-    Element *element = malloc(sizeof(Element));
+    Element *element = (Element*) malloc(sizeof(Element));
+    element->suivant = NULL;
+    element->precedent = NULL;
     return element;
 }
 
+Element* listeNouvelElement(Processus* p){
+    Element *element = (Element*) malloc(sizeof(Element));
+    element->suivant = NULL;
+    element->precedent = NULL;
+    element->data = p;
+    return element;
+}
+
+int listeEstVide(Element* liste){
+    return liste;
+}
+
 /* Get the head of the list. */
-Element *listeValeurTete(Element *element) {
-    Element *head = element;
-    Element *prev = head->precedent;
-    while (prev) {
-        head = prev;
-        prev = head->precedent;
+Element *listeValeurTete(Element *liste) {
+    if (liste){
+        Element *tete = liste;
+        Element *prev = tete->precedent;
+        while (prev) {
+            tete = prev;
+            prev = tete->precedent;
+        }
+        return tete;
     }
-    return head;
+    return liste;
 }
 
 /* Get the tail of the list. */
@@ -65,8 +69,8 @@ Element *listeValeurQueue(Element *node) {
 
 /* Free the memory of a node, including its data contents if applicable. */
 void listeLibererElement(Element *node) {
-    if (node->data)
-        free(node->data);
+    /*if (node->data)
+        free(node->data);*/
     free(node);
 }
 
@@ -84,23 +88,30 @@ void listeLibererListe(Element *node) {
 /* Insert a node on to the head of the list. Returns a pointer to the added
  * node.
  */
-Element *listeAjouterTete(Element *node, Element *node_add) {
-    Element *head = listeValeurTete(node);
-    assert (head);
-    head->precedent = node_add;
-    node_add->suivant = head;
-    return node_add;
+Element *listeAjouterTete(Element *liste, Element *nouvel_element) {
+    if (!liste){
+        liste = nouvel_element;
+        return liste;
+    } else {
+        Element *tete = listeValeurTete(liste);
+        assert (tete);
+        tete->precedent = nouvel_element;
+        nouvel_element->suivant = tete;
+        return nouvel_element;
+    }
 }
 
 /* Insert a node on to the tail of the list. Returns a pointer to the added
  * node.
  */
 Element *listeAjouterQueue(Element *node, Element *node_add) {
-    Element *tail = listeValeurTete(node);
-    assert (tail);
-    tail->suivant = node_add;
-    node_add->precedent = tail;
-    return node_add;
+    
+
+        Element *tail = listeValeurQueue(node);
+        assert (tail);
+        tail->suivant = node_add;
+        node_add->precedent = tail;
+    return listeValeurTete(node_add);
 }
 
 /* Insert a node before the specified node. Returns a pointer to the added
@@ -133,7 +144,7 @@ Element *listeAjouterApres(Element *node, Element *node_add) {
 
 /* Find a node in the list with the specified data. Returns a pointer to the
  * node if found, otherwise NULL. */
-Element *listeTrouver(Element *node, processus *data) {
+Element *listeTrouver(Element *node, Processus *data) {
     Element *curr = listeValeurTete(node);
     while (curr) {
         if (curr->data == data)
@@ -146,8 +157,30 @@ Element *listeTrouver(Element *node, processus *data) {
 /* Delete a node from the list containing the data. Returns 1 on success,
  * or 0 if not found.
  */
-int listeSupprimer(Element *node, processus *data) {
-    Element *curr = listeValeurTete(node);
+Element* listeSupprimer(Element *node, Processus *data) {
+    Element * element = listeTrouver(node, data);
+    if (element){
+        Element * precedent = element->precedent;
+        Element * suivant = element->suivant;
+        Element* tete;
+        if(element->precedent){
+            printf("ici\n");
+            element->precedent->suivant = element->suivant;
+        }
+        if(element->suivant){
+            element->suivant->precedent = element->precedent;
+        }
+        if (suivant){
+            tete = listeValeurTete(suivant);
+        } else if (precedent){
+            tete = listeValeurTete(precedent);
+        }
+        listeLibererElement(element);
+        return tete;
+    }
+    return 1;
+
+    /*Element *curr = listeValeurTete(node);
     while (curr) {
         if (curr->data) {
             if (curr->data == data) {
@@ -160,18 +193,33 @@ int listeSupprimer(Element *node, processus *data) {
             }
         }
     }
-    return 0;
+    return 0;*/
 }
+
+Element* listeSupprimerTete(Element *liste){
+    liste = listeValeurTete(liste);
+    if (liste->suivant){
+        Element* nouvelle_liste = liste->suivant;
+        liste->suivant->precedent = NULL;
+        listeLibererElement(liste);
+        return nouvelle_liste;
+    }
+} 
 
 void printListeProcessus(Element *node){
     Element *curr = listeValeurTete(node);
+    int count = 0;
+    printf("Liste de processus : \n");
     while (curr) {
         if (curr->data) {
-            processus *p = (processus *)curr->data;
+            Processus *p = (Processus *)curr->data;
             printf("Processus: %ld; prio: %d\n", p->type, p->priorite);
         }
         curr = curr->suivant;
+        count++;
     }
+    printf("Il y a %d elements\n", count);
+
 }
 
 /***************************************************************************/
@@ -183,6 +231,7 @@ void printListeProcessus(Element *node){
 /* Iterate the list from the head treating each node as a person, printing its
  * contents.
  */
+/*
 void print_person_list(Element *node) {
     Element *curr = listeValeurTete(node);
     while (curr) {
@@ -194,7 +243,7 @@ void print_person_list(Element *node) {
     }
 }
 
-/* Create a person with a name and age, returning a pointer to the person. */
+// Create a person with a name and age, returning a pointer to the person. 
 person_t *create_person(char *name, int age) {
     person_t *person = malloc(sizeof(person_t));
     person->name = name;
@@ -202,7 +251,7 @@ person_t *create_person(char *name, int age) {
     return person;
 }
 
-/* Find a person by name in a list of persons, returning a pointer to the person. */
+// Find a person by name in a list of persons, returning a pointer to the person. 
 person_t *find_person(Element *node, char *name) {
     Element *curr = listeValeurTete(node);
     while (curr) {
@@ -213,15 +262,14 @@ person_t *find_person(Element *node, char *name) {
     }
     return NULL;
 }
-
+*/
 /***************************************************************************/
 
 /***************************************************************************
  * Test Functions (INCOMPLETE)
  ***************************************************************************/
 
-int i = 0;
-
+/*
 Element *test_list() {
     Element *head = listeCreer();
     head->data = create_person("John Meikle", 23);
@@ -261,7 +309,7 @@ void test_all() {
     test_list_node_init();
     test_list_get_head();
     test_list_get_tail();
-}
+}*/
 
 /***************************************************************************/
 
