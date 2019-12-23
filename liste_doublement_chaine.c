@@ -38,7 +38,7 @@ Element* listeNouvelElement(Processus* p){
     return element;
 }
 
-int listeEstVide(Element* liste){
+Element* listeEstVide(Element* liste){
     return liste;
 }
 
@@ -57,14 +57,20 @@ Element *listeValeurTete(Element *liste) {
 }
 
 /* Get the tail of the list. */
-Element *listeValeurQueue(Element *node) {
-    Element *tail = node;
-    Element *next = tail->suivant;
-    while (next) {
-        tail = next;
-        next = tail->suivant;
+Element *listeValeurQueue(Element *liste) {
+    if (liste == NULL){
+        return NULL;
     }
-    return tail;
+    if (liste){
+        Element *queue = liste;
+        Element *suivant = queue->suivant;
+        while (suivant) {
+            queue = suivant;
+            suivant = queue->suivant;
+        }
+        return queue;
+    }
+    return liste;
 }
 
 /* Free the memory of a node, including its data contents if applicable. */
@@ -104,14 +110,17 @@ Element *listeAjouterTete(Element *liste, Element *nouvel_element) {
 /* Insert a node on to the tail of the list. Returns a pointer to the added
  * node.
  */
-Element *listeAjouterQueue(Element *node, Element *node_add) {
-    
-
-        Element *tail = listeValeurQueue(node);
-        assert (tail);
-        tail->suivant = node_add;
-        node_add->precedent = tail;
-    return listeValeurTete(node_add);
+Element *listeAjouterQueue(Element *liste, Element *nouvel_element) {
+    if (!liste){
+        liste = nouvel_element;
+        return liste;
+    } else {
+        Element *queue = listeValeurQueue(liste);
+        assert (queue);
+        queue->suivant = nouvel_element;
+        nouvel_element->precedent = queue;
+        return listeValeurTete(nouvel_element);
+    }
 }
 
 /* Insert a node before the specified node. Returns a pointer to the added
@@ -178,7 +187,7 @@ Element* listeSupprimer(Element *node, Processus *data) {
         listeLibererElement(element);
         return tete;
     }
-    return 1;
+    return NULL;
 
     /*Element *curr = listeValeurTete(node);
     while (curr) {
@@ -197,12 +206,17 @@ Element* listeSupprimer(Element *node, Processus *data) {
 }
 
 Element* listeSupprimerTete(Element *liste){
+    if (liste == NULL){
+        return NULL;
+    }
     liste = listeValeurTete(liste);
     if (liste->suivant){
         Element* nouvelle_liste = liste->suivant;
-        liste->suivant->precedent = NULL;
+        nouvelle_liste->precedent = NULL;
         listeLibererElement(liste);
         return nouvelle_liste;
+    } else {
+        return NULL;
     }
 } 
 
@@ -213,7 +227,7 @@ void printListeProcessus(Element *node){
     while (curr) {
         if (curr->data) {
             Processus *p = (Processus *)curr->data;
-            printf("Processus: %ld; prio: %d\n", p->type, p->priorite);
+            printf("Processus: %d, prio: %d, temp exec: %d\n", p->mon_pid, p->priorite, p->temps_exec);
         }
         curr = curr->suivant;
         count++;

@@ -49,7 +49,10 @@ struct sembuf sem_oper_V ;  /* Operation V */
 
 void traitantSIGINT();
 void fils();
-void pere(int);
+void ordonnaceur();
+void gererListe(Element** liste);
+
+int processus_en_cours = 0;
 
 void initSem() {
     int status;
@@ -114,13 +117,14 @@ Processus genererProcessus(){
     Processus prc;
     prc.type = FILE;
     prc.priorite = randomNumber(0, 10);
-    prc.temps_exec = randomNumber(2, 20);
+    prc.temps_exec = randomNumber(2, 10);
+    prc.mon_pid = getpid();
     return prc;
 }
 
 
 void traitantSIGINT(int num){
-    if (num == SIGINT){
+    if (num){
         supprimerMessages();
 	    supprimerSemaphores();
         supprimerMemoirePartage();
@@ -131,10 +135,24 @@ void traitantSIGINT(int num){
     }
 }
 
+void traitantSIGINTfils(int num){
+    if (num == SIGINT){
+        printf("%sLe processus %d s'est terminé%s\n", RED, getpid(), NORMAL);
+        supprimerMessages();
+	    supprimerSemaphores();
+        supprimerMemoirePartage();
+        kill(getpid(), SIGINT);
+        exit(1);
+    } else {
+        perror("Erreur traitant, files non supprimé\n");
+        exit(1);
+    }
+}
+
 void traitantSIGSEGV(int num){
     if (num == SIGSEGV){
         printf("Erreur segmentation fault\n");
-        kill(getpid(), SIGINT);
+        kill(getpid(), SIGSEGV);
         exit(1);
     } else {
         perror("Erreur traitant, files non supprimé\n");
@@ -155,29 +173,13 @@ int main()
     srand(time(0));
     
     signal(SIGINT, traitantSIGINT);
+    signal(SIGTERM, traitantSIGINT);
+    signal(SIGQUIT, traitantSIGINT);
     signal(SIGSEGV, traitantSIGSEGV);
 
     initMsg();
     initSem();
-    initShm();
-
-
-    //Ajouter des liste : exemple
-
-    Element* liste = NULL;
-
-    Processus p = genererProcessus();
-    liste = listeAjouterTete(liste, listeNouvelElement(&p));
-
-    printf("here\n");
-    printListeProcessus(liste);
-    listeValeurTete(liste);
-    //return 0;
-    
-
-
-
-
+    initShm();    
 
 	*temps = 0; //initialisation a 0 du compteur
 
@@ -198,7 +200,7 @@ int main()
         default:
             //PERE
             //Gere l'algorithme d'ordonnancement
-            pere(pid_fils);
+            ordonnaceur();
             break;
     }
 
@@ -212,21 +214,23 @@ int main()
 }
 
 void fils(){
-    for(int i = 0; i < 5; i++) {
+    for(int i = 0; i < 10; i++) {
         P();
-        for (int i = 0; i < randomNumber(0, 5); i++) //Genere un nbre aleatoire de processus à la fois
+        for (int i = 0; i < randomNumber(0, 3); i++) //Genere un nbre aleatoire de processus à la fois
         {
 
             int pid = fork();
             if (!pid){
+                signal(SIGINT, traitantSIGINTfils);
                 Processus prc = genererProcessus();
                 prc.date_soumission = *temps;
-                prc.mon_pid = getpid();
                 msgsnd(msgid, &prc, sizeof(Processus) - sizeof(long), 0);
-                printf("%sProcessus %d avec prio %d a demarre: %s\n",GREEN, prc.mon_pid, prc.priorite, NORMAL);
-                
-                for (int j = 0; j < prc.temps_exec; j++){
-                    sleep(1);
+
+                kill(getpid(), SIGTSTP);
+
+                while(1){ //simule du travail
+                    //printf("%d : travail\n", getpid());
+                    sleep(2);
                 }
                 
                 printf("%sProcessus %d s'est termine%s\n",RED, prc.mon_pid, NORMAL);
@@ -234,30 +238,56 @@ void fils(){
                 exit(EXIT_SUCCESS);
             }
 
-            
         }
         V();
-        sleep(2);
+        sleep(5);
     }
     exit(0);
 }
 
-void pere(int pid_fils){
-        
+void ordonnaceur(){
+    
+    Element* liste = NULL;
+
     while(1) {
         P();
         while (nombreMessages(msgid) > 0) //Tant qu'il y a des messages
         {
             Processus* p = (Processus*)malloc(sizeof(Processus));
             msgrcv(msgid, p, sizeof(Processus) - sizeof(long), FILE, 0);
-            printf("%sProcessus %d avec prio est arrive : %d%s\n",GREEN, p->mon_pid, p->priorite, NORMAL);
+            printf("%sProcessus %d avec priorite %d est arrive, temps d'exec %d: %s\n",GREEN, p->mon_pid, p->priorite, p->temps_exec, NORMAL);           
+            liste = listeAjouterQueue(liste, listeNouvelElement(p));
         }
+
+        printListeProcessus(liste);
+
         (*temps)++;
         printf("%sTemps courant : %d%s\n",BOLDWHITE, *temps, NORMAL);
         V();
-        sleep(4);
+
+        gererListe(&liste);
+
+        sleep(2);
+
     }
 
-    //printf("Il reste %ld messages dans la file\n", buf.msg_qnum);
+}
 
+void gererListe(Element** liste){
+    if (processus_en_cours) {
+        kill(processus_en_cours, SIGTSTP);
+    }
+    Element *e = listeValeurTete(*liste);
+    if(e) {
+        Processus *p = e->data;
+        if(p->temps_exec > 0){
+            kill(p->mon_pid, SIGCONT);
+            processus_en_cours = p->mon_pid;
+            p->temps_exec--;
+        } else {
+            kill(p->mon_pid, SIGINT);
+            *liste = listeSupprimerTete(*liste);
+            processus_en_cours = 0;
+        }
+    }
 }

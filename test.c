@@ -32,6 +32,14 @@ void erreurFin(const char* msg){
     perror(msg);
 }
 
+void traitantSIGCHLD(int num){
+    int wstatus;
+    wait(&wstatus);
+    printf("signal recu\n");
+    printf("Le pid est %d\n", wstatus);
+    exit(0);
+}
+
 int main() {
 	pid_t pid ;
 	int status ;
@@ -44,19 +52,27 @@ int main() {
             break;
 		case 0 : 
 			printf("Je suis dans le processus fils %d \n",getpid());
-            while(1){
+            //while(1){
                 printf("OK\n");
                 sleep(1);
-            }
+            //}
+            printf("fin\n");
+            return getpid();
             break;
 			
 		default :
 			printf("Je suis dans le processus pere : %d \n",getpid());
+            //signal(SIGCHLD, traitantSIGCHLD);
             while(1){
-                kill(pid, SIGSTOP);
+                int * i= (int*)malloc(sizeof(int)) ;
+                *i = 1;
+                /*kill(pid, SIGSTOP);
                 sleep(4);
                 kill(pid, SIGCONT);
-                sleep(4);
+                sleep(4);*/
+                *i=3;
+                ;
+
             }
 			
 	}
