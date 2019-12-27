@@ -223,16 +223,17 @@ Element* listeSupprimerTete(Element *liste){
 void printListeProcessus(Element *node){
     Element *curr = listeValeurTete(node);
     int count = 0;
-    printf("Liste de processus : \n");
     while (curr) {
+        printf("Priorite: %d : ", node->data->priorite);
         if (curr->data) {
             Processus *p = (Processus *)curr->data;
-            printf("Processus: %d, prio: %d, temp exec: %d\n", p->mon_pid, p->priorite, p->temps_exec);
+            printf("P: %d, tps exec: %d; ", p->mon_pid, p->temps_exec);
         }
         curr = curr->suivant;
         count++;
     }
-    printf("Il y a %d elements\n", count);
+    printf("\n");
+    //printf(" =>  %d elements\n", count);
 
 }
 

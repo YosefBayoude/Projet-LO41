@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
+#include <pthread.h>
 #include "liste_doublement_chaine.c"
 
 //#ifndef PROJET
@@ -40,19 +41,26 @@ int msgid;
 int semid;
 int shmid;
 
+int pid_fils_global;
+
 int* temps;
+
+pthread_mutex_t lock;
 
 struct sembuf sem_oper_P ;  /* Operation P */
 struct sembuf sem_oper_V ;  /* Operation V */
 
+int priorite = -1;
+int liste_priorite[100] = {5,0,5,9,7,0,9,8,7,5,1,9,6,7,0,8,4,4,6,8,1,3,0,5,0,5,0,9,1,6,6,2,6,3,1,4,5,3,3,4,3,7,0,6,7,2,4,4,8,9,7,2,0,4,5,0,3,7,3,5,5,9,6,6,7,8,5,1,9,1,3,7,1,4,6,1,1,9,7,1,5,9,7,6,7,0,7,8,3,1,6,7,2,9,0,7,1,0,2,0};
+int _position_liste_priorite = 0;
 
+int processus_en_cours = 0;
 
 void traitantSIGINT();
 void fils();
 void ordonnaceur();
-void gererListe(Element** liste);
+void gererListe(Element** liste[10]);
 
-int processus_en_cours = 0;
 
 void initSem() {
     int status;
@@ -113,22 +121,23 @@ int randomNumber(int min, int max){
 }
 
 
-Processus genererProcessus(){
-    Processus prc;
-    prc.type = FILE;
-    prc.priorite = randomNumber(0, 10);
-    prc.temps_exec = randomNumber(2, 10);
-    prc.mon_pid = getpid();
+Processus* genererProcessus(){
+    Processus* prc = (Processus*)malloc(sizeof(Processus));;
+    prc->type = FILE;
+    prc->priorite = randomNumber(0, 9);
+    prc->temps_exec = randomNumber(2, 5);
+    prc->mon_pid = getpid();
     return prc;
 }
 
 
 void traitantSIGINT(int num){
+    printf("Arret du program\n");
     if (num){
         supprimerMessages();
 	    supprimerSemaphores();
         supprimerMemoirePartage();
-        exit(1);
+        exit(0);
     } else {
         perror("Erreur traitant, files non supprimé\n");
         exit(1);
@@ -136,23 +145,16 @@ void traitantSIGINT(int num){
 }
 
 void traitantSIGINTfils(int num){
-    if (num == SIGINT){
-        printf("%sLe processus %d s'est terminé%s\n", RED, getpid(), NORMAL);
-        supprimerMessages();
-	    supprimerSemaphores();
-        supprimerMemoirePartage();
-        kill(getpid(), SIGINT);
-        exit(1);
-    } else {
-        perror("Erreur traitant, files non supprimé\n");
-        exit(1);
-    }
+    printf("%sLe processus %d s'est terminé%s\n", RED, getpid(), NORMAL);
+    exit(0);
 }
 
 void traitantSIGSEGV(int num){
     if (num == SIGSEGV){
         printf("Erreur segmentation fault\n");
-        kill(getpid(), SIGSEGV);
+        supprimerMessages();
+	    supprimerSemaphores();
+        supprimerMemoirePartage();
         exit(1);
     } else {
         perror("Erreur traitant, files non supprimé\n");
@@ -166,15 +168,42 @@ int nombreMessages(int msgid){
     return buf.msg_qnum;
 }
 
+int position_liste_priorite(){
+    if(_position_liste_priorite == 99) _position_liste_priorite = 0;
+    else _position_liste_priorite++;
+    
+    return _position_liste_priorite;
+}
+
+int prochaine_priorite(int priorite){
+    if(priorite == 9) priorite = 0;
+    else priorite++;
+    
+    return priorite;
+}
+
+
+int liste_est_vide(Element* liste[10]){
+    for(int i = 0; i < 10; i++){
+        if (liste[i] != NULL){
+            printf("La liste n'est pas vide %d", i);
+        }
+    }
+    return 0;
+}
+
 
 int main()
 {
     printf("Lancement du programme\n");
     srand(time(0));
     
-    signal(SIGINT, traitantSIGINT);
-    signal(SIGTERM, traitantSIGINT);
-    signal(SIGQUIT, traitantSIGINT);
+    struct sigaction sa;
+    sa.sa_handler = traitantSIGINT;
+    sigemptyset(&(sa.sa_mask));
+    sigaddset(&(sa.sa_mask), SIGINT);
+    sigaction(SIGINT, &sa, NULL);
+    
     signal(SIGSEGV, traitantSIGSEGV);
 
     initMsg();
@@ -200,6 +229,7 @@ int main()
         default:
             //PERE
             //Gere l'algorithme d'ordonnancement
+            pid_fils_global = pid_fils;
             ordonnaceur();
             break;
     }
@@ -214,66 +244,135 @@ int main()
 }
 
 void fils(){
+    
+    signal(SIGCHLD, SIG_IGN); //Evite que le fils attende le pere pour mourir
+
     for(int i = 0; i < 10; i++) {
-        P();
+        //P();
         for (int i = 0; i < randomNumber(0, 3); i++) //Genere un nbre aleatoire de processus à la fois
         {
 
+
             int pid = fork();
             if (!pid){
-                signal(SIGINT, traitantSIGINTfils);
-                Processus prc = genererProcessus();
-                prc.date_soumission = *temps;
-                msgsnd(msgid, &prc, sizeof(Processus) - sizeof(long), 0);
 
-                kill(getpid(), SIGTSTP);
+                struct sigaction sa;
+                sa.sa_handler = traitantSIGINTfils;
+                sigemptyset(&(sa.sa_mask));
+                sigaddset(&(sa.sa_mask), SIGINT);
+                sigaction(SIGINT, &sa, NULL);
+
+                if(sigaction(SIGINT, &sa, NULL) != 0)
+                {
+                    perror( "sigaction failed" );
+                    exit( EXIT_FAILURE );
+                }
+
+
+                Processus* prc = genererProcessus();
+                prc->date_soumission = *temps;
+                msgsnd(msgid, prc, sizeof(Processus) - sizeof(long), 0);
+
+
+
+                //kill(getpid(), SIGTSTP);
+                //kill(getpid(), SIGCONT);
+                kill(getpid(), SIGSTOP);
+
+
 
                 while(1){ //simule du travail
                     //printf("%d : travail\n", getpid());
-                    sleep(2);
+                    
                 }
                 
-                printf("%sProcessus %d s'est termine%s\n",RED, prc.mon_pid, NORMAL);
+                printf("%sProcessus %d s'est termine%s\n",RED, prc->mon_pid, NORMAL);
 
                 exit(EXIT_SUCCESS);
-            }
 
+            }
         }
-        V();
-        sleep(5);
+        //V();
+        sleep(2);
     }
+
     exit(0);
 }
 
 void ordonnaceur(){
     
-    Element* liste = NULL;
+    struct sigaction sa;
+    sa.sa_handler = traitantSIGINT;
+    sigemptyset(&(sa.sa_mask));
+    sigaddset(&(sa.sa_mask), SIGINT);
+    sigaction(SIGINT, &sa, NULL);
+    
 
-    while(1) {
-        P();
+    Element* liste[10];
+    for (int i = 0; i < 10; i++){
+        liste[i] = NULL;
+    }
+
+    for(int i = 0; i < 20; i++) {
+        //P();
         while (nombreMessages(msgid) > 0) //Tant qu'il y a des messages
         {
             Processus* p = (Processus*)malloc(sizeof(Processus));
             msgrcv(msgid, p, sizeof(Processus) - sizeof(long), FILE, 0);
-            printf("%sProcessus %d avec priorite %d est arrive, temps d'exec %d: %s\n",GREEN, p->mon_pid, p->priorite, p->temps_exec, NORMAL);           
-            liste = listeAjouterQueue(liste, listeNouvelElement(p));
+            printf("%sProcessus %d avec priorite %d est arrive, temps d'exec %d, temps d'arrive %d: %s\n",GREEN, p->mon_pid, p->priorite, p->temps_exec, p->date_soumission, NORMAL);           
+            liste[p->priorite] = listeAjouterQueue(liste[p->priorite], listeNouvelElement(p));
         }
 
-        printListeProcessus(liste);
+        
+        for (int i = 0; i < 10; i++) {
+            printListeProcessus(liste[i]);
+        }
 
         (*temps)++;
         printf("%sTemps courant : %d%s\n",BOLDWHITE, *temps, NORMAL);
-        V();
+        //V();
 
-        gererListe(&liste);
+        if (processus_en_cours) {
+            kill(processus_en_cours, SIGTSTP);
+        }
 
-        sleep(2);
+
+        if(!liste_est_vide(liste[10])) {
+            priorite = liste_priorite[position_liste_priorite()];
+    
+            printf("%sPriorite courante : %d%s\n",BOLDWHITE, priorite, NORMAL);
+    
+            Element *e = listeValeurTete(liste[priorite]);
+    
+            while(e == NULL){
+                priorite = prochaine_priorite(priorite);
+                Element *e = listeValeurTete(liste[priorite]);
+            }
+    
+            if(e) {
+                Processus *p = e->data;
+                if(p->temps_exec > 0){
+                    kill(p->mon_pid, SIGCONT);
+                    processus_en_cours = p->mon_pid;
+                    p->temps_exec--;
+                } else {
+                    if (kill(p->mon_pid, SIGINT) == 0){
+                        printf("Signal envoye\n");
+                    }
+                    kill(pid_fils_global, SIGCHLD);
+                    *liste = listeSupprimerTete(*liste);
+                    processus_en_cours = 0;
+                }
+            }
+    
+            sleep(2);
+        }
 
     }
 
 }
 
-void gererListe(Element** liste){
+void gererListe(Element** liste[10]){
     if (processus_en_cours) {
         kill(processus_en_cours, SIGTSTP);
     }
@@ -281,11 +380,14 @@ void gererListe(Element** liste){
     if(e) {
         Processus *p = e->data;
         if(p->temps_exec > 0){
-            kill(p->mon_pid, SIGCONT);
+            //kill(p->mon_pid, SIGCONT);
             processus_en_cours = p->mon_pid;
             p->temps_exec--;
         } else {
-            kill(p->mon_pid, SIGINT);
+            if (kill(p->mon_pid, SIGINT) == 0){
+                printf("Signal envoye\n");
+            }
+            //kill(pid_fils_global, SIGCHLD);
             *liste = listeSupprimerTete(*liste);
             processus_en_cours = 0;
         }
