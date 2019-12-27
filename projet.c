@@ -50,7 +50,7 @@ pthread_mutex_t lock;
 struct sembuf sem_oper_P ;  /* Operation P */
 struct sembuf sem_oper_V ;  /* Operation V */
 
-int priorite = -1;
+int priorite_courante = -1;
 int liste_priorite[100] = {5,0,5,9,7,0,9,8,7,5,1,9,6,7,0,8,4,4,6,8,1,3,0,5,0,5,0,9,1,6,6,2,6,3,1,4,5,3,3,4,3,7,0,6,7,2,4,4,8,9,7,2,0,4,5,0,3,7,3,5,5,9,6,6,7,8,5,1,9,1,3,7,1,4,6,1,1,9,7,1,5,9,7,6,7,0,7,8,3,1,6,7,2,9,0,7,1,0,2,0};
 int _position_liste_priorite = 0;
 
@@ -59,7 +59,7 @@ int processus_en_cours = 0;
 void traitantSIGINT();
 void fils();
 void ordonnaceur();
-void gererListe(Element** liste[10]);
+void gererListe(Element* liste[10]);
 
 
 void initSem() {
@@ -168,14 +168,14 @@ int nombreMessages(int msgid){
     return buf.msg_qnum;
 }
 
-int position_liste_priorite(){
+int prochainePositionDansListeDePriorite(){
     if(_position_liste_priorite == 99) _position_liste_priorite = 0;
     else _position_liste_priorite++;
     
     return _position_liste_priorite;
 }
 
-int prochaine_priorite(int priorite){
+int prochainePriorite(int priorite){
     if(priorite == 9) priorite = 0;
     else priorite++;
     
@@ -183,15 +183,31 @@ int prochaine_priorite(int priorite){
 }
 
 
-int liste_est_vide(Element* liste[10]){
+int tableauEstVide(Element* liste[10]){
     for(int i = 0; i < 10; i++){
         if (liste[i] != NULL){
-            printf("La liste n'est pas vide %d", i);
+            return 0;
         }
     }
-    return 0;
+    return 1;
 }
 
+int calculerPriorite(Element* tableau[]){
+    
+    priorite_courante = liste_priorite[prochainePositionDansListeDePriorite()]; //On cherche la prochaine priorite de la liste de priorite
+
+    printf("%sPriorite courante (normalement) : %d%s  ",BOLDWHITE, priorite_courante, NORMAL);
+
+    Element *e = listeValeurTete(tableau[priorite_courante]);
+    while(e == NULL){ //On cherche si il y a un processus avec la priorite = priorite_courante
+        priorite_courante = prochainePriorite(priorite_courante);
+        e = listeValeurTete(tableau[priorite_courante]);
+    }
+
+    printf("%sDevenu : %d%s\n",BOLDWHITE, priorite_courante, NORMAL);
+
+    return priorite_courante;
+}
 
 int main()
 {
@@ -203,7 +219,7 @@ int main()
     sigemptyset(&(sa.sa_mask));
     sigaddset(&(sa.sa_mask), SIGINT);
     sigaction(SIGINT, &sa, NULL);
-    
+
     signal(SIGSEGV, traitantSIGSEGV);
 
     initMsg();
@@ -308,12 +324,9 @@ void ordonnaceur(){
     sigaction(SIGINT, &sa, NULL);
     
 
-    Element* liste[10];
-    for (int i = 0; i < 10; i++){
-        liste[i] = NULL;
-    }
+    Element* liste[10] = {NULL};
 
-    for(int i = 0; i < 20; i++) {
+    for(int i = 0; i < 200; i++) {
         //P();
         while (nombreMessages(msgid) > 0) //Tant qu'il y a des messages
         {
@@ -332,64 +345,47 @@ void ordonnaceur(){
         printf("%sTemps courant : %d%s\n",BOLDWHITE, *temps, NORMAL);
         //V();
 
-        if (processus_en_cours) {
-            kill(processus_en_cours, SIGTSTP);
-        }
+        gererListe(liste);
 
-
-        if(!liste_est_vide(liste[10])) {
-            priorite = liste_priorite[position_liste_priorite()];
-    
-            printf("%sPriorite courante : %d%s\n",BOLDWHITE, priorite, NORMAL);
-    
-            Element *e = listeValeurTete(liste[priorite]);
-    
-            while(e == NULL){
-                priorite = prochaine_priorite(priorite);
-                Element *e = listeValeurTete(liste[priorite]);
-            }
-    
-            if(e) {
-                Processus *p = e->data;
-                if(p->temps_exec > 0){
-                    kill(p->mon_pid, SIGCONT);
-                    processus_en_cours = p->mon_pid;
-                    p->temps_exec--;
-                } else {
-                    if (kill(p->mon_pid, SIGINT) == 0){
-                        printf("Signal envoye\n");
-                    }
-                    kill(pid_fils_global, SIGCHLD);
-                    *liste = listeSupprimerTete(*liste);
-                    processus_en_cours = 0;
-                }
-            }
-    
-            sleep(2);
-        }
+        sleep(2);
 
     }
 
 }
 
-void gererListe(Element** liste[10]){
+void gererListe(Element* tableau[10]){
+
     if (processus_en_cours) {
         kill(processus_en_cours, SIGTSTP);
     }
-    Element *e = listeValeurTete(*liste);
-    if(e) {
-        Processus *p = e->data;
-        if(p->temps_exec > 0){
-            //kill(p->mon_pid, SIGCONT);
-            processus_en_cours = p->mon_pid;
-            p->temps_exec--;
-        } else {
-            if (kill(p->mon_pid, SIGINT) == 0){
-                printf("Signal envoye\n");
+
+    if(!tableauEstVide(tableau)) {
+
+        Element *e = listeValeurTete(tableau[calculerPriorite(tableau)]);
+
+        if(e) {
+            Processus *p = e->data;
+            if(p->temps_exec > 0){
+                kill(p->mon_pid, SIGCONT);
+                processus_en_cours = p->mon_pid;
+                p->temps_exec--;
+                if(p->priorite < (10-2)){
+                    //liste[p->priorite] = listeAjouterQueue(liste[p->priorite], listeNouvelElement(p));
+
+
+                    tableau[p->priorite + 1] = listeAjouterQueue(tableau[p->priorite + 1], listeNouvelElement( listeValeurTete(tableau[priorite_courante])->data ));
+                    p->priorite++;
+                    tableau[priorite_courante] = listeSupprimerTete(tableau[priorite_courante]);
+                }
+            } else {
+                kill(p->mon_pid, SIGINT);
+                kill(pid_fils_global, SIGCHLD);
+                tableau[priorite_courante] = listeSupprimerTete(tableau[priorite_courante]);
+                processus_en_cours = 0;
             }
-            //kill(pid_fils_global, SIGCHLD);
-            *liste = listeSupprimerTete(*liste);
-            processus_en_cours = 0;
+
         }
+
     }
+    
 }
