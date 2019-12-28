@@ -123,6 +123,7 @@ Element* listeSupprimerTete(Element *liste){
         listeLibererElement(liste);
         return nouvelle_liste;
     } else {
+        listeLibererElement(liste);
         return NULL;
     }
 } 
