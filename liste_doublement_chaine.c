@@ -20,13 +20,6 @@ typedef struct element {
  ***************************************************************************/
 
 /* Initialises a node in a doubly-linked list, returning a pointer to the node. */
-Element *listeCreer() {
-    Element *element = (Element*) malloc(sizeof(Element));
-    element->suivant = NULL;
-    element->precedent = NULL;
-    element->data = NULL;
-    return element;
-}
 
 Element* listeNouvelElement(Processus* p){
     Element *element = (Element*) malloc(sizeof(Element));
@@ -37,23 +30,23 @@ Element* listeNouvelElement(Processus* p){
 }
 
 /* Get the head of the list. */
-Element *listeValeurTete(Element *liste) {
-    if (liste == NULL) return NULL;
+Element *listeValeurTete(Element *e) {
+    if (e == NULL) return NULL;
 
-    Element *tete = liste;
-    Element *prev = tete->precedent;
-    while (prev) {
-        tete = prev;
-        prev = tete->precedent;
+    Element *tete = e;
+    Element *precedent = tete->precedent;
+    while (precedent) {
+        tete = precedent;
+        precedent = tete->precedent;
     }
     return tete;
 }
 
 /* Get the tail of the list. */
-Element *listeValeurQueue(Element *liste) {
-    if (liste == NULL) return NULL;
+Element *listeValeurQueue(Element *e) {
+    if (e == NULL) return NULL;
     
-    Element *queue = liste;
+    Element *queue = e;
     Element *suivant = queue->suivant;
     while (suivant) {
         queue = suivant;
@@ -63,22 +56,11 @@ Element *listeValeurQueue(Element *liste) {
 }
 
 /* Free the memory of a node, including its data contents if applicable. */
-void listeLibererElement(Element *node) {
-    /*if (node->data)
-        free(node->data);*/
-    //free(node);
+void listeLibererElement(Element *e) {
+    //free(e->data);
+    free(e);
 }
 
-/* Free the memory of an entire list. */
-void listeLibererListe(Element *node) {
-    Element *curr = listeValeurTete(node);
-    Element *next = NULL;
-    while (curr) {
-        next = curr->suivant;
-        listeLibererElement(curr);
-        curr = next;
-    }
-}
 
 void listeCopierElement(Element** dest, Element** source){
     *dest = *source;
@@ -90,14 +72,13 @@ void listeCopierElement(Element** dest, Element** source){
 /* Insert a node on to the head of the list. Returns a pointer to the added
  * node.
  */
-Element *listeAjouterTete(Element *liste, Element *nouvel_element) {
+Element* listeAjouterTete(Element *liste, Processus* p) {
     if (!liste){
-        return nouvel_element;
+        return listeNouvelElement(p);
     } else {
         Element *tete = listeValeurTete(liste);
-        assert (tete);
-        //tete->precedent = nouvel_element;
-        listeCopierElement(&(tete->precedent), &nouvel_element);
+        Element* nouvel_element = listeNouvelElement(p);
+        tete->precedent = nouvel_element;
         nouvel_element->suivant = tete;
         return nouvel_element;
     }
@@ -106,14 +87,13 @@ Element *listeAjouterTete(Element *liste, Element *nouvel_element) {
 /* Insert a node on to the tail of the list. Returns a pointer to the added
  * node.
  */
-Element *listeAjouterQueue(Element *liste, Element *nouvel_element) {
+Element *listeAjouterQueue(Element *liste, Processus* p) {
     if (!liste){
-        return nouvel_element;
+        return listeNouvelElement(p);
     } else {
         Element *queue = listeValeurQueue(liste);
-        assert (queue);
-        //queue->suivant = nouvel_element;
-        listeCopierElement(&(queue->suivant), &nouvel_element);
+        Element* nouvel_element = listeNouvelElement(p);
+        queue->suivant = nouvel_element;
         nouvel_element->precedent = queue;
         return listeValeurTete(nouvel_element);
     }
@@ -121,36 +101,39 @@ Element *listeAjouterQueue(Element *liste, Element *nouvel_element) {
 
 
 Element* listeSupprimerTete(Element *liste){
-    if (liste == NULL){
+    if (!liste){
         return NULL;
-    }
-    liste = listeValeurTete(liste);
-    if (liste->suivant){
-        Element* nouvelle_liste = liste->suivant;
-        nouvelle_liste->precedent = NULL;
-        listeLibererElement(liste);
-        return nouvelle_liste;
     } else {
-        listeLibererElement(liste);
-        return NULL;
+        Element* tete = listeValeurTete(liste);
+        if (tete->suivant){
+            Element* nouvelle_tete = tete->suivant;
+            nouvelle_tete->precedent = NULL;
+            listeLibererElement(tete);
+            return nouvelle_tete;
+        } else {
+            listeLibererElement(liste);
+            return NULL;
+        }
+
     }
+
 } 
 
 Element* listeSupprimerQueue(Element *liste){
-    if (liste == NULL){
+    if (!liste){
         return NULL;
-    }
-    if (liste->data == NULL){
-        return NULL;
-    }
-    Element* queue = listeValeurQueue(liste);
-    Element* tete = listeValeurTete(queue);
-    if (queue->precedent){
-        queue->precedent->suivant = NULL;
-        return tete;
     } else {
-        listeLibererElement(queue);
-        return NULL;
+        Element* queue = listeValeurQueue(liste);
+        if (queue->precedent){
+            Element* nouvelle_queue = queue->precedent;
+            nouvelle_queue->suivant = NULL;
+            listeLibererElement(queue);
+            return listeValeurTete(liste);
+        } else {
+            listeLibererElement(liste);
+            return NULL;
+        }
+
     }
 }
 
