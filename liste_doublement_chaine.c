@@ -24,6 +24,7 @@ Element *listeCreer() {
     Element *element = (Element*) malloc(sizeof(Element));
     element->suivant = NULL;
     element->precedent = NULL;
+    element->data = NULL;
     return element;
 }
 
@@ -65,7 +66,7 @@ Element *listeValeurQueue(Element *liste) {
 void listeLibererElement(Element *node) {
     /*if (node->data)
         free(node->data);*/
-    free(node);
+    //free(node);
 }
 
 /* Free the memory of an entire list. */
@@ -79,17 +80,24 @@ void listeLibererListe(Element *node) {
     }
 }
 
+void listeCopierElement(Element** dest, Element** source){
+    *dest = *source;
+    (*dest)->data = (*source)->data;
+    (*dest)->precedent = (*source)->precedent;
+    (*dest)->suivant = (*source)->suivant;
+}
+
 /* Insert a node on to the head of the list. Returns a pointer to the added
  * node.
  */
 Element *listeAjouterTete(Element *liste, Element *nouvel_element) {
     if (!liste){
-        liste = nouvel_element;
-        return liste;
+        return nouvel_element;
     } else {
         Element *tete = listeValeurTete(liste);
         assert (tete);
-        tete->precedent = nouvel_element;
+        //tete->precedent = nouvel_element;
+        listeCopierElement(&(tete->precedent), &nouvel_element);
         nouvel_element->suivant = tete;
         return nouvel_element;
     }
@@ -100,12 +108,12 @@ Element *listeAjouterTete(Element *liste, Element *nouvel_element) {
  */
 Element *listeAjouterQueue(Element *liste, Element *nouvel_element) {
     if (!liste){
-        liste = nouvel_element;
-        return liste;
+        return nouvel_element;
     } else {
         Element *queue = listeValeurQueue(liste);
         assert (queue);
-        queue->suivant = nouvel_element;
+        //queue->suivant = nouvel_element;
+        listeCopierElement(&(queue->suivant), &nouvel_element);
         nouvel_element->precedent = queue;
         return listeValeurTete(nouvel_element);
     }
@@ -127,6 +135,24 @@ Element* listeSupprimerTete(Element *liste){
         return NULL;
     }
 } 
+
+Element* listeSupprimerQueue(Element *liste){
+    if (liste == NULL){
+        return NULL;
+    }
+    if (liste->data == NULL){
+        return NULL;
+    }
+    Element* queue = listeValeurQueue(liste);
+    Element* tete = listeValeurTete(queue);
+    if (queue->precedent){
+        queue->precedent->suivant = NULL;
+        return tete;
+    } else {
+        listeLibererElement(queue);
+        return NULL;
+    }
+}
 
 void printListeProcessus(Element *node){
     Element *curr = listeValeurTete(node);

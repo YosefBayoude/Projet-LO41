@@ -54,12 +54,12 @@ int priorite_courante = -1;
 int liste_priorite[100] = {5,0,5,9,7,0,9,8,7,5,1,9,6,7,0,8,4,4,6,8,1,3,0,5,0,5,0,9,1,6,6,2,6,3,1,4,5,3,3,4,3,7,0,6,7,2,4,4,8,9,7,2,0,4,5,0,3,7,3,5,5,9,6,6,7,8,5,1,9,1,3,7,1,4,6,1,1,9,7,1,5,9,7,6,7,0,7,8,3,1,6,7,2,9,0,7,1,0,2,0};
 int _position_liste_priorite = 0;
 
-Element* processus_en_cours = NULL;
+Element* processus_en_cours;
 
 void traitantSIGINT();
 void fils();
 void ordonnaceur();
-Element* gererListe(Element* liste[10]);
+void gererListe(Element* liste[10]);
 void supprimerProcessusTermines();
 
 
@@ -229,7 +229,8 @@ int main()
 
 	*temps = 0; //initialisation a 0 du compteur
 
-    //processus_en_cours = listeCreer();
+    processus_en_cours = NULL;
+
 
     printf("Creation du fils\n");
     int pid_fils = fork();  
@@ -348,19 +349,18 @@ void ordonnaceur(){
         printf("%sTemps courant : %d%s\n",BOLDWHITE, *temps, NORMAL);
         //V();
 
-        processus_en_cours = gererListe(liste);
+        gererListe(liste);
 
         sleep(2);
 
-        supprimerProcessusTermines(); //Supprime les processus qui ont un temps d'execution
+        supprimerProcessusTermines(liste); //Supprime les processus qui ont un temps d'execution
 
     }
 
 }
 
-Element* gererListe(Element* tableau[10]){
+void gererListe(Element* tableau[10]){
 
-    printf("erreur ici");
     if (processus_en_cours){
             kill(processus_en_cours->data->mon_pid, SIGTSTP);
     }
@@ -374,7 +374,7 @@ Element* gererListe(Element* tableau[10]){
             if(p->temps_exec > 0){
                 kill(p->mon_pid, SIGCONT);
                 p->temps_exec--;
-                //processus_en_cours = e;
+
 
                 if(p->priorite < (10-2)){
                     tableau[p->priorite + 1] = listeAjouterQueue(tableau[p->priorite + 1], listeNouvelElement( listeValeurTete(tableau[priorite_courante])->data ));
@@ -382,23 +382,34 @@ Element* gererListe(Element* tableau[10]){
                     tableau[priorite_courante] = listeSupprimerTete(tableau[priorite_courante]);
                 }
 
+                listeCopierElement(&processus_en_cours, &e);
             }
-            return e;
+        } else {
+            listeLibererListe(processus_en_cours);
+            processus_en_cours = NULL;
+
         }
     }
-    return NULL;
     
 }
 
 
-void supprimerProcessusTermines(){
-    if(processus_en_cours) {
-        if (processus_en_cours->data){
+void supprimerProcessusTermines(Element* tableau[10]){
+    /*if(processus_en_cours) {
             if(processus_en_cours->data->temps_exec == 0){
                 kill(processus_en_cours->data->mon_pid, SIGINT);
                 kill(pid_fils_global, SIGCHLD);
                 processus_en_cours = listeSupprimerTete(processus_en_cours);
                 processus_en_cours = NULL;
+                printf("Processus tue");
+        }
+    }*/
+    for (int i = 0; i < 10; i++){
+        if (listeValeurQueue(tableau[i])){
+            if (tableau[i]->data->temps_exec == 0){
+                kill(tableau[i]->data->mon_pid, SIGINT);
+                kill(pid_fils_global, SIGCHLD);
+                tableau[i] = listeSupprimerQueue(tableau[i]);
             }
         }
     }
