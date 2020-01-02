@@ -141,7 +141,6 @@ void printListeProcessus(Element *node){
     Element *curr = listeValeurTete(node);
     int count = 0;
     while (curr) {
-        printf("Priorite: %d : ", node->data->priorite);
         if (curr->data) {
             Processus *p = (Processus *)curr->data;
             printf("P: %d, tps exec: %d; ", p->mon_pid, p->temps_exec);
@@ -150,7 +149,6 @@ void printListeProcessus(Element *node){
         count++;
     }
     printf("\n");
-    //printf(" =>  %d elements\n", count);
 
 }
 

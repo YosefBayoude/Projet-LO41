@@ -37,6 +37,8 @@
 
 #define CLE 314
 
+#define NBRE_PRIORITE 10
+
 int msgid;
 int semid;
 int shmid;
@@ -57,10 +59,10 @@ int _position_liste_priorite = 0;
 int processus_en_cours = 0;
 
 void traitantSIGINT();
-void fils();
+void generateurDeProcessus();
 void ordonnaceur();
-void gererListe(Element* liste[10]);
-void supprimerProcessusTermines(Element* tableau[10]);
+void gererProcessus(Element* liste[NBRE_PRIORITE]);
+void supprimerProcessusTermines(Element* tableau[NBRE_PRIORITE]);
 
 
 void initSem() {
@@ -125,9 +127,10 @@ int randomNumber(int min, int max){
 Processus* genererProcessus(){
     Processus* prc = (Processus*)malloc(sizeof(Processus));;
     prc->type = FILE;
-    prc->priorite = randomNumber(0, 9);
+    prc->priorite = randomNumber(0, NBRE_PRIORITE - 1);
     prc->temps_exec = randomNumber(2, 5);
     prc->mon_pid = getpid();
+    prc->date_soumission = *temps;
     return prc;
 }
 
@@ -146,7 +149,7 @@ void traitantSIGINT(int num){
 }
 
 void traitantSIGINTfils(int num){
-    printf("%sLe processus %d s'est terminé%s\n", RED, getpid(), NORMAL);
+    printf("%sLe processus %d s'est termine%s\n", RED, getpid(), NORMAL);
     exit(0);
 }
 
@@ -163,11 +166,18 @@ void traitantSIGSEGV(int num){
     }
 }
 
-int nombreMessages(int msgid){
-    struct msqid_ds buf;
-    int nb_messages = msgctl(msgid, IPC_STAT, &buf);
-    return buf.msg_qnum;
+
+
+int tableauEstVide(Element* liste[NBRE_PRIORITE]){
+    for(int i = 0; i < NBRE_PRIORITE; i++){
+        if (liste[i] != NULL){
+            return 0;
+        }
+    }
+    return 1;
 }
+
+
 
 int prochainePositionDansListeDePriorite(){
     if(_position_liste_priorite == 99) _position_liste_priorite = 0;
@@ -176,143 +186,165 @@ int prochainePositionDansListeDePriorite(){
     return _position_liste_priorite;
 }
 
+
+
 int prochainePriorite(int priorite){
-    if(priorite == 9) priorite = 0;
+    if(priorite == (NBRE_PRIORITE - 1)) priorite = 0;
     else priorite++;
     
     return priorite;
 }
 
 
-int tableauEstVide(Element* liste[10]){
-    for(int i = 0; i < 10; i++){
-        if (liste[i] != NULL){
-            return 0;
-        }
-    }
-    return 1;
-}
 
-int calculerPriorite(Element* tableau[]){
+int calculerPriorite(Element* tableau[NBRE_PRIORITE]){
     
     priorite_courante = liste_priorite[prochainePositionDansListeDePriorite()]; //On cherche la prochaine priorite de la liste de priorite
 
-    printf("%sPriorite courante (normalement) : %d%s  ",BOLDWHITE, priorite_courante, NORMAL);
+    printf("%sPriorite courante : %d%s  ",BOLDCYAN, priorite_courante, NORMAL);
 
     Element *e = listeValeurTete(tableau[priorite_courante]);
     while(e == NULL){ //On cherche si il y a un processus avec la priorite = priorite_courante
-        priorite_courante = prochainePriorite(priorite_courante);
+        priorite_courante = prochainePriorite(priorite_courante); //On change la priorite si il n'y a pas de procesuss dans la file "priorite_courante"
         e = listeValeurTete(tableau[priorite_courante]);
     }
 
-    printf("%sDevenu : %d%s\n",BOLDWHITE, priorite_courante, NORMAL);
+    printf("%sDevenu : %d%s\n",BOLDBLUE, priorite_courante, NORMAL); 
 
     return priorite_courante;
 }
 
+
+
+void afficherFiles(Element* tableau[NBRE_PRIORITE]){
+    for (int i = 0; i < NBRE_PRIORITE; i++) {
+            printf("File %d : ", i);
+            printListeProcessus(tableau[i]);
+    }
+}
+
+
+
+int nombreMessages(int msgid){
+    struct msqid_ds buf;
+    int nb_messages = msgctl(msgid, IPC_STAT, &buf);
+    return buf.msg_qnum;
+}
+
+
+
+void receptionMessages(Element* tableau[NBRE_PRIORITE]){
+    while (nombreMessages(msgid) > 0){ //Tant qu'il y a des messages
+        Processus* p = (Processus*)malloc(sizeof(Processus));
+        msgrcv(msgid, p, sizeof(Processus) - sizeof(long), FILE, 0);
+        tableau[p->priorite] = listeAjouterQueue(tableau[p->priorite], p);
+        printf("%sProcessus %d avec priorite %d est arrive, temps d'exec %d, temps d'arrive %d: %s\n",GREEN, p->mon_pid, p->priorite, p->temps_exec, p->date_soumission, NORMAL);           
+    }
+}
+
+
+
 int main()
 {
-    printf("Lancement du programme\n");
-    srand(time(0));
     
+    //***** Traitant signal *****//
     struct sigaction sa;
     sa.sa_handler = traitantSIGINT;
     sigemptyset(&(sa.sa_mask));
     sigaddset(&(sa.sa_mask), SIGINT);
     sigaction(SIGINT, &sa, NULL);
 
-    signal(SIGSEGV, traitantSIGSEGV);
 
+    //***** Initialisations objets IPC ******//
     initMsg();
     initSem();
     initShm();    
 
-	*temps = 0; //initialisation a 0 du compteur
+
+    //***** Initialisations variables ******//
+	*temps = 0; //Compteur de temps (symbolise le quantum de temps)
+    srand(time(0)); //Generateur nombre aleatoire
 
 
+    printf("Lancement du programme\n");
+    
 
-    printf("Creation du fils\n");
-    int pid_fils = fork();  
-    switch (pid_fils)
+    //***** Lancement des programmes *****//
+    pid_fils_global = fork();  
+    switch (pid_fils_global)
     {
         case -1:
             perror("Erreur fork");
             break;
-        /****************************************************/
+
         case 0:
-            //FILS
-            //Genere des processus
-            fils();
+            //***** Genere des processus (fils) *****//
+            generateurDeProcessus();
             break;
-        /****************************************************/
+
         default:
-            //PERE
-            //Gere l'algorithme d'ordonnancement
-            pid_fils_global = pid_fils;
+            //***** Gere l'algorithme d'ordonnancement (pere) *****//
             ordonnaceur();
             break;
     }
 
     
+    //***** Supprimer les objets IPC *****//
     supprimerMessages();
 	supprimerSemaphores();
     supprimerMemoirePartage();
 
+
     printf("Fin du programme\n");
+
+
     return 0;
 }
 
-void fils(){
-    
-    signal(SIGCHLD, SIG_IGN); //Evite que le fils attende le pere pour mourir
+void generateurDeProcessus(){
 
-    for(int i = 0; i < 10; i++) {
+    //***** Traitant signal *****//
+    signal(SIGCHLD, SIG_IGN); //Evite que le fils attende le pere pour mourir = pour ne pas avoir de processus zombies
+
+    for(int i = 0; i < 3; i++) { //Nombre de fois qu'on genere des processuss
         //P();
-        for (int i = 0; i < randomNumber(0, 3); i++) //Genere un nbre aleatoire de processus à la fois
+        for (int i = 0; i < randomNumber(0, 3); i++) //Genere un nbre aleatoire de processus en une fois
         {
-
-
             int pid = fork();
             if (!pid){
 
+                //***** Traitant signal *****//
                 struct sigaction sa;
                 sa.sa_handler = traitantSIGINTfils;
                 sigemptyset(&(sa.sa_mask));
                 sigaddset(&(sa.sa_mask), SIGINT);
                 sigaction(SIGINT, &sa, NULL);
 
-                if(sigaction(SIGINT, &sa, NULL) != 0)
-                {
-                    perror( "sigaction failed" );
-                    exit( EXIT_FAILURE );
-                }
 
-
+                //***** Generation des données processus *****//
                 Processus* prc = genererProcessus();
-                prc->date_soumission = *temps;
+
+
+                //***** Envoie de ses donnees a l'ordonnanceur *****//
                 msgsnd(msgid, prc, sizeof(Processus) - sizeof(long), 0);
 
 
-
-                //kill(getpid(), SIGTSTP);
-                //kill(getpid(), SIGCONT);
+                //***** Le proessus s'arrete immediatement apres avoir ete crée *****//
                 kill(getpid(), SIGSTOP);
 
 
-
-                while(1){ //simule du travail
-                    //printf("%d : travail\n", getpid());
-                    
-                }
+                //***** Simulation travail *****//
+                while(1){ }
                 
-                printf("%sProcessus %d s'est termine%s\n",RED, prc->mon_pid, NORMAL);
-
+            
+                printf("%sProcessus %d s'est termine par lui meme%s\n",RED, prc->mon_pid, NORMAL);
                 exit(EXIT_SUCCESS);
 
             }
         }
-        //V();
-        sleep(2);
+
+        //***** Temps d'attente *****//
+        sleep(1.5); //Pause entre la generation des processus
     }
 
     exit(0);
@@ -320,6 +352,7 @@ void fils(){
 
 void ordonnaceur(){
     
+    //***** Traitant signal *****//
     struct sigaction sa;
     sa.sa_handler = traitantSIGINT;
     sigemptyset(&(sa.sa_mask));
@@ -327,43 +360,49 @@ void ordonnaceur(){
     sigaction(SIGINT, &sa, NULL);
     
 
-    Element* liste[10] = {NULL};
+    //***** Initialisations du tableau ******//
+    Element* tableau[NBRE_PRIORITE] = {NULL};
 
-    for(int i = 0; i < 200; i++) {
+
+    while(1) { //Ordonnance à l'infini
         //P();
-        while (nombreMessages(msgid) > 0) //Tant qu'il y a des messages
-        {
-            Processus* p = (Processus*)malloc(sizeof(Processus));
-            msgrcv(msgid, p, sizeof(Processus) - sizeof(long), FILE, 0);
-            printf("%sProcessus %d avec priorite %d est arrive, temps d'exec %d, temps d'arrive %d: %s\n",GREEN, p->mon_pid, p->priorite, p->temps_exec, p->date_soumission, NORMAL);           
-            liste[p->priorite] = listeAjouterQueue(liste[p->priorite], p);
-        }
+
+        //***** Reception des donnees des processus qui arrivent *****//
+        receptionMessages(tableau);
 
         
-        for (int i = 0; i < 10; i++) {
-            printListeProcessus(liste[i]);
-        }
+        //***** Affichage du tableau *****//
+        afficherFiles(tableau);
 
+
+        //***** Incrementation du temps *****//
         (*temps)++;
         printf("%sTemps courant : %d%s\n",BOLDWHITE, *temps, NORMAL);
-        //V();
 
-        gererListe(liste);
 
+        //***** Gestion des processus *****//
+        gererProcessus(tableau);
+
+
+        //***** Quantum de temps ******//
         sleep(2);
 
-        supprimerProcessusTermines(liste); //Supprime les processus qui ont un temps d'execution
+        //***** Suppression des processus finis *****//
+        supprimerProcessusTermines(tableau); //Supprime les processus qui ont un temps d'execution de 0
 
     }
 
 }
 
-void gererListe(Element* tableau[10]){
+void gererProcessus(Element* tableau[NBRE_PRIORITE]){
 
+    //***** Arrete le processus en cours *****//
     if (processus_en_cours){
             kill(processus_en_cours, SIGTSTP);
     }
 
+
+    //***** Algorithme ordonnanceur *****//
     if(!tableauEstVide(tableau)){
 
         Element *e = listeValeurTete(tableau[calculerPriorite(tableau)]);
@@ -371,14 +410,14 @@ void gererListe(Element* tableau[10]){
         if(e) {
             Processus *p = e->data;
             if(p->temps_exec > 0){
-                kill(p->mon_pid, SIGCONT);
+                kill(p->mon_pid, SIGCONT); //Ralance le processus
                 p->temps_exec--;
 
-                if(p->priorite < (10-1)){
+                if(p->priorite < (NBRE_PRIORITE-1)){
                     tableau[p->priorite + 1] = listeAjouterQueue(tableau[p->priorite + 1], listeValeurTete(tableau[priorite_courante])->data);
                     p->priorite++;
                     tableau[priorite_courante] = listeSupprimerTete(tableau[priorite_courante]);
-                } else if (p->priorite == (10-1)){
+                } else if (p->priorite == (NBRE_PRIORITE-1)){
                     tableau[p->priorite] = listeAjouterQueue(tableau[p->priorite], listeValeurTete(tableau[priorite_courante])->data);
                     tableau[p->priorite] = listeSupprimerTete(tableau[p->priorite]);
                 }
@@ -390,12 +429,12 @@ void gererListe(Element* tableau[10]){
 }
 
 
-void supprimerProcessusTermines(Element* tableau[10]){
-    for (int i = 0; i < 10; i++){
+void supprimerProcessusTermines(Element* tableau[NBRE_PRIORITE]){
+    for (int i = 0; i < NBRE_PRIORITE; i++){
         if (tableau[i]){
             if (listeValeurQueue(tableau[i])->data->temps_exec == 0){
-                kill(tableau[i]->data->mon_pid, SIGINT);
-                kill(pid_fils_global, SIGCHLD);
+                kill(listeValeurQueue(tableau[i])->data->mon_pid, SIGINT);
+                kill(pid_fils_global, SIGCHLD); //Evite les processus zombies
                 tableau[i] = listeSupprimerQueue(tableau[i]);
                 processus_en_cours = 0;
             }
