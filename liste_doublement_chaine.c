@@ -55,7 +55,7 @@ Element *listeValeurQueue(Element *e) {
     return queue;
 }
 
-/* Free the memory of a node, including its data contents if applicable. */
+/* Free the memory of a node, including its data contents. */
 void listeLibererElement(Element *e) {
     //free(e->data);
     free(e);
