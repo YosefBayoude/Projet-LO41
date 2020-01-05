@@ -61,7 +61,7 @@ int processus_en_cours = 0;
 void traitantSIGINT();
 void generateurDeProcessus();
 void ordonnanceur();
-void gererProcessus(Element* liste[NBRE_PRIORITE], Element** processus_a_ajouter);
+void gererProcessus(Element* liste[NBRE_PRIORITE]);
 void supprimerProcessusTermines(Element* tableau[NBRE_PRIORITE]);
 
 
@@ -267,31 +267,20 @@ int nombreMessages(int msgid){
  * Recupere les données des processus crées, dans la file de message,
  * et les ajoute dans le tableau (à la bonne position)
  */
-void receptionMessages(Element** processus_a_ajouter){
-    if(nombreMessages(msgid) > 0) printf("\n");
-
+void receptionMessages(Element* tableau[NBRE_PRIORITE]){
     while (nombreMessages(msgid) > 0){ //Tant qu'il y a des messages
         Processus* p = (Processus*)malloc(sizeof(Processus));
         msgrcv(msgid, p, sizeof(Processus) - sizeof(long), FILE_MESSAGES_TYPE, 0);
-        *processus_a_ajouter = listeAjouterQueue(*processus_a_ajouter, p);
-        //printf("%sProcessus %d avec priorite %d est arrive, temps d'exec %d, temps d'arrive %d: %s\n",GREEN, p->mon_pid, p->priorite, p->temps_exec, p->date_soumission, NORMAL);           
+        tableau[p->priorite] = listeAjouterQueue(tableau[p->priorite], p);
+        printf("%sProcessus %d avec priorite %d est arrive, temps d'exec %d, temps d'arrive %d: %s\n",GREEN, p->mon_pid, p->priorite, p->temps_exec, p->date_soumission, NORMAL);           
     }
-    
     printf("\n");
 }
 
-void ajouterProcessusAuTableau(Element* tableau[NBRE_PRIORITE], Element** processus_a_ajouter){
-    (*processus_a_ajouter) = listeValeurTete(*processus_a_ajouter);
-    
-    while ((*processus_a_ajouter)) {
-        if ((*processus_a_ajouter)->data) {
-            tableau[(*processus_a_ajouter)->data->priorite] = listeAjouterQueue(tableau[(*processus_a_ajouter)->data->priorite], (*processus_a_ajouter)->data);
-            printf("%sProcessus %d avec priorite %d est arrive, temps d'exec %d, temps d'arrive %d: %s\n",GREEN, (*processus_a_ajouter)->data->mon_pid, (*processus_a_ajouter)->data->priorite, (*processus_a_ajouter)->data->temps_exec, (*processus_a_ajouter)->data->date_soumission, NORMAL);           
-            (*processus_a_ajouter) = listeSupprimerTete((*processus_a_ajouter));
-        }
-    }
-}
 
+/**
+ * Permet a l'utilisateur de fournir sa propre liste de priorite
+ */
 int ouvrirFichier(){
     FILE* file;
     file = fopen("liste_priorites.txt", "r");
@@ -475,17 +464,12 @@ void ordonnanceur(){
 
     //***** Initialisations du tableau ******//
     Element* tableau[NBRE_PRIORITE] = {NULL};
-    Element* processus_a_ajouter = NULL;
 
 
     while(1) { //Ordonnance à l'infini
 
         //***** Suppression des processus finis *****//
         supprimerProcessusTermines(tableau);
-        
-
-        //***** Reception des donnees des processus qui arrivent *****//
-        receptionMessages(&processus_a_ajouter);
 
         
         //***** Affichage du tableau *****//
@@ -498,7 +482,7 @@ void ordonnanceur(){
 
 
         //***** Gestion des processus *****//
-        gererProcessus(tableau, &processus_a_ajouter);
+        gererProcessus(tableau);
 
 
         //***** Quantum de temps ******//
@@ -514,7 +498,7 @@ void ordonnanceur(){
  * cette fonction arrete et redemarre les processus en fonction de leur priorité et de leur temps d'execution.
  * Il repositionne egualement les processus à la bonne file une fois executé et decremente leur temps d'execution.
  */
-void gererProcessus(Element* tableau[NBRE_PRIORITE], Element** processus_a_ajouter){
+void gererProcessus(Element* tableau[NBRE_PRIORITE]){
 
     //***** Arrete le processus en cours *****//
     if (processus_en_cours){
@@ -533,7 +517,7 @@ void gererProcessus(Element* tableau[NBRE_PRIORITE], Element** processus_a_ajout
                 kill(p->mon_pid, SIGCONT); //Ralance le processus
                 p->temps_exec--;
 
-                ajouterProcessusAuTableau(tableau, processus_a_ajouter);
+                receptionMessages(tableau);
 
                 if(p->priorite < (NBRE_PRIORITE-1)){ //Pour les  processus des files de 0 - 8, on incremente la priorité un fois executé
                     tableau[p->priorite + 1] = listeAjouterQueue(tableau[p->priorite + 1], listeValeurTete(tableau[priorite_courante])->data);
@@ -547,7 +531,7 @@ void gererProcessus(Element* tableau[NBRE_PRIORITE], Element** processus_a_ajout
             }
         }
     } else {
-        ajouterProcessusAuTableau(tableau, processus_a_ajouter);
+        receptionMessages(tableau);
     }
     
 }

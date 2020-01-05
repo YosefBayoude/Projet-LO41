@@ -1,5 +1,4 @@
-typedef struct type_processus
-{
+typedef struct type_processus {
     long type;
     int priorite;
     int date_soumission;
