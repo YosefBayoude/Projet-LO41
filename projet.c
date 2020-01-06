@@ -145,7 +145,7 @@ int randomNumber(int min, int max){
 
 
 void traitantSIGINT(int num){
-    printf("Arret du program\n");
+    printf("Arret du program par SIGINT\n");
     if (num){
         supprimerMessages();
 	    supprimerSemaphores();
