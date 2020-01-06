@@ -13,9 +13,6 @@
 #include <pthread.h>
 #include "liste_doublement_chaine.c"
 
-//#ifndef PROJET
-//#define PROJET
-
 #define NORMAL  "\x1B[0m"
 #define RED  "\x1B[31m"
 #define GREEN  "\x1B[32m"
@@ -34,37 +31,49 @@
 #define BOLDWHITE   "\033[1m\033[37m"      /* Bold White */
 
 #define FILE_MESSAGES_TYPE 1
-
 #define CLE 314
 
-#define NBRE_PRIORITE 10
 
+
+
+//***** Variables modifiables *****//
+#define NBRES_DE_PRIORITE 10
 #define QUANTUM_DE_TEMPS 2 // en sec
+#define TEMPS_EXEC_MAX 5
 
-int msgid;
-int semid;
-int shmid;
 
-int* temps;
+int* temps; // Variable accedé par le pere ET les fils
 
 
 struct sembuf sem_oper_P ;  /* Operation P */
 struct sembuf sem_oper_V ;  /* Operation V */
 
-int pid_fils_global;
-int priorite_courante = -1;
-int liste_priorite[100] = {5,0,5,9,7,0,9,8,7,5,1,9,6,7,0,8,4,4,6,8,1,3,0,5,0,5,0,9,1,6,6,2,6,3,1,4,5,3,3,4,3,7,0,6,7,2,4,4,8,9,7,2,0,4,5,0,3,7,3,5,5,9,6,6,7,8,5,1,9,1,3,7,1,4,6,1,1,9,7,1,5,9,7,6,7,0,7,8,3,1,6,7,2,9,0,7,1,0,2,0};
-int position_liste_priorite = 0;
 
+//***** Variables fonctionnement algo ordonnancement *****//
+int liste_priorite[100] = {5,0,5,9,7,0,9,8,7,5,1,9,6,7,0,8,4,4,6,8,1,3,0,5,0,5,0,9,1,6,6,2,6,3,1,4,5,3,3,4,3,7,0,6,7,2,4,4,8,9,7,2,0,4,5,0,3,7,3,5,5,9,6,6,7,8,5,1,9,1,3,7,1,4,6,1,1,9,7,1,5,9,7,6,7,0,7,8,3,1,6,7,2,9,0,7,1,0,2,0};
+int priorite_courante = -1;
+int position_liste_priorite = 0;
 int processus_en_cours = 0;
+
+int pid_generateur_processus;
+
+int msgid;
+int semid;
+int shmid;
+
+
+
+
 
 void traitantSIGINT();
 void generateurDeProcessus();
 void ordonnanceur();
-void gererProcessus(Element* liste[NBRE_PRIORITE]);
-void supprimerProcessusTermines(Element* tableau[NBRE_PRIORITE]);
+void gererProcessus(Element* liste[NBRES_DE_PRIORITE], FILE* sortie);
+void supprimerProcessusTermines(Element* tableau[NBRES_DE_PRIORITE]);
 
-
+/**
+ * Initialise les semaphores
+ */
 void initSem() {
     int status;
    	union semun {
@@ -86,11 +95,17 @@ void initSem() {
     }
 }
 
+/**
+ * Initialise la memoire partagé
+ */
 void initShm(){
     shmid = shmget(CLE, sizeof(int), 0666|IPC_CREAT);
 	temps = (int *)shmat(shmid, NULL, 0);
 }
 
+/**
+ * Initialise la file de message
+ */
 void initMsg(){
     if ((msgid = msgget(CLE, 0750 | IPC_CREAT | IPC_EXCL)) == -1)
     {
@@ -98,21 +113,22 @@ void initMsg(){
     }
 }
 
+/**
+ * Suppression des objets IPC
+ */
 void supprimerMessages(){ msgctl(msgid, IPC_RMID, NULL); }
-
 void supprimerSemaphores(){ semctl(semid, 0, IPC_RMID, NULL); }
-
 void supprimerMemoirePartage(){ shmctl(shmid, IPC_RMID, NULL); }
 
-void P() {
-    sem_oper_P.sem_num = 0;
+void P(int semnum) {
+    sem_oper_P.sem_num = semnum;
     sem_oper_P.sem_op  = -1 ;
     sem_oper_P.sem_flg = 0 ;
     semop(semid, &sem_oper_P, 1);
 }
 
-void V() {
-    sem_oper_V.sem_num = 0;
+void V(int semnum) {
+    sem_oper_V.sem_num = semnum;
     sem_oper_V.sem_op  = 1 ;
     sem_oper_V.sem_flg  = 0 ;
     semop(semid, &sem_oper_V, 1);
@@ -142,7 +158,9 @@ void traitantSIGINT(int num){
 }
 
 
-
+/**
+ * Traitant pour les processus qui passent par l'ordonnanceur
+ */
 void traitantSIGINTfils(int num){
     printf("%sLe processus %d s'est termine%s\n", RED, getpid(), NORMAL);
     exit(0);
@@ -171,8 +189,8 @@ void traitantSIGSEGV(int num){
 Processus* genererProcessus(){
     Processus* prc = (Processus*)malloc(sizeof(Processus));;
     prc->type = FILE_MESSAGES_TYPE;
-    prc->priorite = randomNumber(0, NBRE_PRIORITE - 1);
-    prc->temps_exec = randomNumber(2, 5);
+    prc->priorite = randomNumber(0, NBRES_DE_PRIORITE - 1);
+    prc->temps_exec = randomNumber(1, TEMPS_EXEC_MAX);
     prc->mon_pid = getpid();
     prc->date_soumission = *temps;
     return prc;
@@ -182,9 +200,9 @@ Processus* genererProcessus(){
 /**
  * Affiche toutes les files de toutes les priorites, et les processus de chaque file
  */
-void afficherFiles(Element* tableau[NBRE_PRIORITE]){
+void afficherFiles(Element* tableau[NBRES_DE_PRIORITE]){
     printf("Files d'attentes\n");
-    for (int i = 0; i < NBRE_PRIORITE; i++) {
+    for (int i = 0; i < NBRES_DE_PRIORITE; i++) {
             printf("File %d : ", i);
             printListeProcessus(tableau[i]);
     }
@@ -192,8 +210,8 @@ void afficherFiles(Element* tableau[NBRE_PRIORITE]){
 
 
 
-int tableauEstVide(Element* tableau[NBRE_PRIORITE]){
-    for(int i = 0; i < NBRE_PRIORITE; i++){
+int tableauEstVide(Element* tableau[NBRES_DE_PRIORITE]){
+    for(int i = 0; i < NBRES_DE_PRIORITE; i++){
         if (tableau[i] != NULL){
             return 0;
         }
@@ -222,7 +240,7 @@ int prochainePositionDansListeDePriorite(){
  * et si il arrive a la derniere file, il repart à 0
  */
 int prochainePriorite(int priorite){
-    if(priorite == (NBRE_PRIORITE - 1)) priorite = 0;
+    if(priorite >= (NBRES_DE_PRIORITE - 1)) priorite = 0;
     else priorite++;
     
     return priorite;
@@ -235,7 +253,7 @@ int prochainePriorite(int priorite){
  * si la file (de la priorité donné) est vide, il passe à la priorité du dessus
  * si il y a un processus dans la file, on renvoie la priorité calculé
  */
-int calculerPriorite(Element* tableau[NBRE_PRIORITE]){
+int calculerPriorite(Element* tableau[NBRES_DE_PRIORITE]){
     
     priorite_courante = liste_priorite[prochainePositionDansListeDePriorite()]; //On cherche la prochaine priorite de la liste de priorite
 
@@ -267,7 +285,7 @@ int nombreMessages(int msgid){
  * Recupere les données des processus crées, dans la file de message,
  * et les ajoute dans le tableau (à la bonne position)
  */
-void receptionMessages(Element* tableau[NBRE_PRIORITE]){
+void receptionMessages(Element* tableau[NBRES_DE_PRIORITE]){
     while (nombreMessages(msgid) > 0){ //Tant qu'il y a des messages
         Processus* p = (Processus*)malloc(sizeof(Processus));
         msgrcv(msgid, p, sizeof(Processus) - sizeof(long), FILE_MESSAGES_TYPE, 0);
@@ -277,15 +295,36 @@ void receptionMessages(Element* tableau[NBRE_PRIORITE]){
     printf("\n");
 }
 
+FILE* ouvrirFichierSortie(){
+    FILE* file;
+    file = fopen("resultat_executions.txt", "a");
+    if (file == NULL){
+        printf("Erreur ouverture de fichier\n");
+        return NULL;
+    }
+    fprintf(file, "\n");
+    return file;
+}
+
+void ecrireResultat(FILE* fichier, Processus* p){
+    if(fichier == NULL){
+        printf("Erreur ecriture de fichier");
+        return;
+    }
+
+    fprintf(fichier, "P: %d(p = %d, t = %d) -----> ", p->mon_pid, p->priorite, p->temps_exec);
+    
+}
+
 
 /**
  * Permet a l'utilisateur de fournir sa propre liste de priorite
  */
-int ouvrirFichier(){
+int ouvrirFichierPriorite(){
     FILE* file;
     file = fopen("liste_priorites.txt", "r");
     if (file == NULL){
-        printf("Erreur ouverure de fichier\n");
+        printf("Erreur ouverture de fichier\n");
         return -1;
     }
     char virgule = ',';
@@ -295,15 +334,18 @@ int ouvrirFichier(){
         if(virgule != ','){ return -1; };
         fscanf(file, "%c", &virgule);
     }
+    fclose(file);
     return 0;
    
 }
 
+
 int interface(){
     int choix = -1;
+
     printf("====== Menu ======\n");
     printf("1) Jeu d'essai par defaut\n");
-    printf("2) Tableau de priorite par fichier\n");
+    printf("2) Tableau de priorite par fichier (liste_priorites.txt)\n");
 
     scanf("%d", &choix);
 
@@ -315,9 +357,10 @@ int interface(){
         break;
     case 1:
         return 0;
+        break;
     
     case 2:
-        if ( ouvrirFichier()) {
+        if ( ouvrirFichierPriorite() ) {
             printf("Erreur fichier, essayez a nouveau\n");
             return -1;
         };
@@ -336,6 +379,10 @@ int interface(){
  */
 int main()
 {
+    //***** Verification des variables  *****//
+    if(TEMPS_EXEC_MAX < 1) {perror("Temps d'exec max est trop petit"); exit(EXIT_FAILURE);}
+    if(NBRES_DE_PRIORITE < 1) {perror("Nombres de priorites trop petit"); exit(EXIT_FAILURE);}
+
     
     //***** Traitant signal *****//
     struct sigaction sa;
@@ -359,12 +406,13 @@ int main()
 
     printf("Lancement du programme\n");
 
+    FILE* sortie = ouvrirFichierSortie();
     while (interface()){;};
     
 
     //***** Lancement des programmes *****//
-    pid_fils_global = fork();  
-    switch (pid_fils_global)
+    pid_generateur_processus = fork();  
+    switch (pid_generateur_processus)
     {
         case -1:
             perror("Erreur fork");
@@ -377,7 +425,7 @@ int main()
 
         default:
             //***** Gere l'algorithme d'ordonnancement (pere) *****//
-            ordonnanceur();
+            ordonnanceur(sortie);
             break;
     }
 
@@ -403,12 +451,12 @@ void generateurDeProcessus(){
     //***** Traitant signal *****//
     signal(SIGCHLD, SIG_IGN); //Evite que le fils attende le pere pour mourir = pour ne pas avoir de processus zombies
 
-    for(int i = 0; i < 3; i++) { //Nombre de fois qu'on genere des processuss
+    while(1){ //Nombre de fois qu'on genere des processuss
         for (int i = 0; i < randomNumber(0, 3); i++) //Genere un nbre aleatoire de processus en une fois
         {
             int pid = fork();
             if (!pid){
-
+                P(0);
                 //***** Traitant signal *****//
                 struct sigaction sa;
                 sa.sa_handler = traitantSIGINTfils;
@@ -424,6 +472,7 @@ void generateurDeProcessus(){
                 //***** Envoie de ses donnees a l'ordonnanceur *****//
                 msgsnd(msgid, prc, sizeof(Processus) - sizeof(long), 0);
 
+                V(0);
 
                 //***** Le proessus s'arrete immediatement apres avoir ete crée *****//
                 kill(getpid(), SIGSTOP);
@@ -435,12 +484,11 @@ void generateurDeProcessus(){
             
                 printf("%sProcessus %d s'est termine par lui meme%s\n",RED, prc->mon_pid, NORMAL);
                 exit(EXIT_SUCCESS);
-
             }
         }
 
         //***** Temps d'attente *****//
-        sleep(1.5); //Pause entre la generation des processus
+        sleep(1); //Pause entre la generation des processus
     }
 
     exit(0);
@@ -452,7 +500,7 @@ void generateurDeProcessus(){
  * chaque ligne represente un file,
  * et dans chaque ligne il y a N processus stockés
  */
-void ordonnanceur(){
+void ordonnanceur(FILE* sortie){
     
     //***** Traitant signal *****//
     struct sigaction sa;
@@ -463,10 +511,11 @@ void ordonnanceur(){
     
 
     //***** Initialisations du tableau ******//
-    Element* tableau[NBRE_PRIORITE] = {NULL};
+    Element* tableau[NBRES_DE_PRIORITE] = {NULL};
 
 
     while(1) { //Ordonnance à l'infini
+        P(0);
 
         //***** Suppression des processus finis *****//
         supprimerProcessusTermines(tableau);
@@ -482,9 +531,9 @@ void ordonnanceur(){
 
 
         //***** Gestion des processus *****//
-        gererProcessus(tableau);
+        gererProcessus(tableau, sortie);
 
-
+        V(0);
         //***** Quantum de temps ******//
         sleep(QUANTUM_DE_TEMPS);
 
@@ -498,7 +547,7 @@ void ordonnanceur(){
  * cette fonction arrete et redemarre les processus en fonction de leur priorité et de leur temps d'execution.
  * Il repositionne egualement les processus à la bonne file une fois executé et decremente leur temps d'execution.
  */
-void gererProcessus(Element* tableau[NBRE_PRIORITE]){
+void gererProcessus(Element* tableau[NBRES_DE_PRIORITE],FILE* sortie){
 
     //***** Arrete le processus en cours *****//
     if (processus_en_cours){
@@ -515,15 +564,18 @@ void gererProcessus(Element* tableau[NBRE_PRIORITE]){
             Processus *p = e->data;
             if(p->temps_exec > 0){
                 kill(p->mon_pid, SIGCONT); //Ralance le processus
+                processus_en_cours = p->mon_pid;
                 p->temps_exec--;
+
+                ecrireResultat(sortie, p);
 
                 receptionMessages(tableau);
 
-                if(p->priorite < (NBRE_PRIORITE-1)){ //Pour les  processus des files de 0 - 8, on incremente la priorité un fois executé
+                if(p->priorite < (NBRES_DE_PRIORITE-1)){ //Pour les  processus des files de 0 - 8, on incremente la priorité un fois executé
                     tableau[p->priorite + 1] = listeAjouterQueue(tableau[p->priorite + 1], listeValeurTete(tableau[priorite_courante])->data);
                     p->priorite++;
                     tableau[priorite_courante] = listeSupprimerTete(tableau[priorite_courante]);
-                } else if (p->priorite == (NBRE_PRIORITE-1)){ //Pour les processus de la file 9, on remet juste le processus à la fin de la meme file
+                } else if (p->priorite == (NBRES_DE_PRIORITE-1)){ //Pour les processus de la file 9, on remet juste le processus à la fin de la meme file
                     tableau[p->priorite] = listeAjouterQueue(tableau[p->priorite], listeValeurTete(tableau[priorite_courante])->data);
                     tableau[p->priorite] = listeSupprimerTete(tableau[p->priorite]);
                 }
@@ -542,12 +594,12 @@ void gererProcessus(Element* tableau[NBRE_PRIORITE]){
  * dés qu'il en trouve un, il arrete le processus, et le supprime du tableau.
  * Cette fonction est executé avant la gestion des processus.
  */
-void supprimerProcessusTermines(Element* tableau[NBRE_PRIORITE]){
-    for (int i = 0; i < NBRE_PRIORITE; i++){
+void supprimerProcessusTermines(Element* tableau[NBRES_DE_PRIORITE]){
+    for (int i = 0; i < NBRES_DE_PRIORITE; i++){
         if (tableau[i]){
             if (listeValeurQueue(tableau[i])->data->temps_exec == 0){
                 kill(listeValeurQueue(tableau[i])->data->mon_pid, SIGINT);
-                kill(pid_fils_global, SIGCHLD); //Evite les processus zombies
+                kill(pid_generateur_processus, SIGCHLD); //Evite les processus zombies
                 tableau[i] = listeSupprimerQueue(tableau[i]);
                 processus_en_cours = 0;
             }
