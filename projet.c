@@ -70,6 +70,7 @@ void generateurDeProcessus();
 void ordonnanceur();
 void gererProcessus(Element* liste[NBRES_DE_PRIORITE], FILE* sortie);
 void supprimerProcessusTermines(Element* tableau[NBRES_DE_PRIORITE]);
+void ecrireResultat(FILE* fichier, Processus* p, int mode);
 
 /**
  * Initialise les semaphores
@@ -285,34 +286,35 @@ int nombreMessages(int msgid){
  * Recupere les données des processus crées, dans la file de message,
  * et les ajoute dans le tableau (à la bonne position)
  */
-void receptionMessages(Element* tableau[NBRES_DE_PRIORITE]){
+void receptionMessages(Element* tableau[NBRES_DE_PRIORITE], FILE* sortie){
     while (nombreMessages(msgid) > 0){ //Tant qu'il y a des messages
         Processus* p = (Processus*)malloc(sizeof(Processus));
         msgrcv(msgid, p, sizeof(Processus) - sizeof(long), FILE_MESSAGES_TYPE, 0);
         tableau[p->priorite] = listeAjouterQueue(tableau[p->priorite], p);
         printf("%sProcessus %d avec priorite %d est arrive, temps d'exec %d, temps d'arrive %d: %s\n",GREEN, p->mon_pid, p->priorite, p->temps_exec, p->date_soumission, NORMAL);           
+        ecrireResultat(sortie, p, 1);
     }
     printf("\n");
 }
 
 FILE* ouvrirFichierSortie(){
     FILE* file;
-    file = fopen("resultat_executions.txt", "a");
+    file = fopen("resultat_executions.txt", "w");
     if (file == NULL){
         printf("Erreur ouverture de fichier\n");
         return NULL;
     }
-    fprintf(file, "\n");
     return file;
 }
 
-void ecrireResultat(FILE* fichier, Processus* p){
+void ecrireResultat(FILE* fichier, Processus* p, int mode){
     if(fichier == NULL){
         printf("Erreur ecriture de fichier");
         return;
     }
 
-    fprintf(fichier, "P: %d(p = %d, t = %d) -----> ", p->mon_pid, p->priorite, p->temps_exec);
+    if (mode == 1) fprintf(fichier, "------------ P: %d(p = %d, t = %d) arrivé\n", p->mon_pid, p->priorite, p->temps_exec);
+    if (mode == 0) fprintf(fichier, "P: %d(p = %d, t = %d)\n", p->mon_pid, p->priorite, p->temps_exec);
     
 }
 
@@ -391,7 +393,7 @@ int main()
     sigaddset(&(sa.sa_mask), SIGINT);
     sigaction(SIGINT, &sa, NULL);
 
-    signal(SIGSEGV, traitantSIGSEGV);
+    signal(SIGSEGV, traitantSIGSEGV); //debug
 
     //***** Initialisations objets IPC ******//
     initMsg();
@@ -451,7 +453,8 @@ void generateurDeProcessus(){
     //***** Traitant signal *****//
     signal(SIGCHLD, SIG_IGN); //Evite que le fils attende le pere pour mourir = pour ne pas avoir de processus zombies
 
-    while(1){ //Nombre de fois qu'on genere des processuss
+    //for(int i = O; i < 20; i++){ //Remplacer while par cette ligne si on veut qu'il s'arrete tout seul
+    while(1){ 
         for (int i = 0; i < randomNumber(0, 3); i++) //Genere un nbre aleatoire de processus en une fois
         {
             int pid = fork();
@@ -488,7 +491,7 @@ void generateurDeProcessus(){
         }
 
         //***** Temps d'attente *****//
-        sleep(1); //Pause entre la generation des processus
+        sleep(3); //Pause entre la generation des processus
     }
 
     exit(0);
@@ -513,8 +516,8 @@ void ordonnanceur(FILE* sortie){
     //***** Initialisations du tableau ******//
     Element* tableau[NBRES_DE_PRIORITE] = {NULL};
 
-
-    while(1) { //Ordonnance à l'infini
+    //for(int i = O; i < 100; i++){ //Remplacer while par cette ligne si on veut qu'il s'arrete tout seul
+    while(1) {
         P(0);
 
         //***** Suppression des processus finis *****//
@@ -567,9 +570,9 @@ void gererProcessus(Element* tableau[NBRES_DE_PRIORITE],FILE* sortie){
                 processus_en_cours = p->mon_pid;
                 p->temps_exec--;
 
-                ecrireResultat(sortie, p);
+                ecrireResultat(sortie, p, 0);
 
-                receptionMessages(tableau);
+                receptionMessages(tableau, sortie);
 
                 if(p->priorite < (NBRES_DE_PRIORITE-1)){ //Pour les  processus des files de 0 - 8, on incremente la priorité un fois executé
                     tableau[p->priorite + 1] = listeAjouterQueue(tableau[p->priorite + 1], listeValeurTete(tableau[priorite_courante])->data);
@@ -583,7 +586,7 @@ void gererProcessus(Element* tableau[NBRES_DE_PRIORITE],FILE* sortie){
             }
         }
     } else {
-        receptionMessages(tableau);
+        receptionMessages(tableau, sortie);
     }
     
 }
